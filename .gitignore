@@ -1,0 +1,8 @@
+# Cloned third-party repos for reading only (not part of the submission)
+reference/
+
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
