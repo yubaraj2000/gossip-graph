@@ -1,14 +1,54 @@
 """HTTP API of the graph-memory service. AI Town's Convex backend calls it via host.docker.internal.
 
 Run: uv run uvicorn memory.app:app --host 127.0.0.1 --port 8100
+Assumes a single service process: at startup, any 'ingesting' conversation is treated as interrupted.
 """
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 import httpx
 from fastapi import FastAPI, HTTPException
 
-from memory import db
+from memory import db, ingest, llm
 from memory.config import settings
+from memory.models import CharacterIn, ConversationIn
 
-app = FastAPI(title="gossip-graph memory service")
+log = logging.getLogger("memory")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    for world_id in db.list_worlds():
+        if n := ingest.recover_interrupted(world_id):
+            log.warning("world %s: %d interrupted conversation(s) marked failed for retry", world_id, n)
+    task = asyncio.create_task(_retry_loop())
+    yield
+    task.cancel()
+
+
+async def _retry_loop() -> None:
+    """Failed conversations (model outage, crash) are re-ingested from their stored transcript."""
+    while True:
+        await asyncio.sleep(settings.retry_interval_s)
+        if not _ollama_version():
+            continue
+        for world_id in db.list_worlds():
+            try:
+                for r in await asyncio.to_thread(ingest.retry_failed, world_id):
+                    log.warning("world %s: retried %s -> %s", world_id, r["conversation"], r["status"])
+            except Exception:
+                log.exception("world %s: retry pass failed", world_id)
+
+
+def _ollama_version() -> str | None:
+    try:
+        return httpx.get(f"{settings.ollama_url}/api/version", timeout=3).json()["version"]
+    except Exception:
+        return None
+
+
+app = FastAPI(title="gossip-graph memory service", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -17,11 +57,7 @@ def health() -> dict:
         falkordb_ok = bool(db.client().connection.ping())
     except Exception:
         falkordb_ok = False
-    try:
-        ollama = httpx.get(f"{settings.ollama_url}/api/version", timeout=3).json()["version"]
-    except Exception:
-        ollama = None
-    return {"falkordb": falkordb_ok, "ollama": ollama}
+    return {"falkordb": falkordb_ok, "ollama": _ollama_version()}
 
 
 @app.get("/worlds")
@@ -37,3 +73,39 @@ def create_world(world_id: str) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"world": world_id, "graph": db.graph_name(world_id), "indexes_created": created}
+
+
+@app.post("/worlds/{world_id}/characters")
+def upsert_characters(world_id: str, characters: list[CharacterIn]) -> dict:
+    """Seed or update the village's characters (names, identities, gullibility)."""
+    try:
+        db.ensure_world(world_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    ingest.upsert_characters(db.world_graph(world_id), characters)
+    return {"world": world_id, "characters": len(characters)}
+
+
+@app.post("/worlds/{world_id}/conversations")
+def ingest_conversation(world_id: str, conv: ConversationIn) -> dict:
+    """Store a finished conversation and spread its claims as beliefs. Safe to call more than once."""
+    _check_world_id(world_id)
+    try:
+        return ingest.ingest_conversation(world_id, conv)
+    except llm.LLMError as e:
+        # The transcript is stored and the conversation marked 'failed'; the retry loop will pick it up.
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/worlds/{world_id}/retry")
+def retry_failed(world_id: str) -> dict:
+    """Re-ingest this world's failed conversations now instead of waiting for the retry loop."""
+    _check_world_id(world_id)
+    return {"world": world_id, "results": ingest.retry_failed(world_id)}
+
+
+def _check_world_id(world_id: str) -> None:
+    try:
+        db.graph_name(world_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))

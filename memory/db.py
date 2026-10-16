@@ -52,6 +52,16 @@ def existing_indexes(world_id: str) -> set[tuple[str, str, str]]:
     return {(label, prop, kind) for label, types in rows for prop, kinds in types.items() for kind in kinds}
 
 
+_ready: set[str] = set()
+
+
+def ensure_world(world_id: str) -> None:
+    """ensure_schema, but only once per world per process (it is on every ingest's hot path)."""
+    if world_id not in _ready:
+        ensure_schema(world_id)
+        _ready.add(world_id)
+
+
 def ensure_schema(world_id: str) -> list[str]:
     """Create any missing indexes for a world. Safe to call repeatedly; returns what it created."""
     g = world_graph(world_id)
