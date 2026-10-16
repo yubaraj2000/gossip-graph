@@ -10,9 +10,9 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 
-from memory import db, explain, ingest, llm, narrate, recall
+from memory import cases, db, explain, ingest, llm, narrate, recall
 from memory.config import settings
-from memory.models import CharacterIn, ConversationIn, EventIn, RelationshipIn
+from memory.models import CaseIn, CharacterIn, ConversationIn, EventIn, RelationshipIn
 
 log = logging.getLogger("memory")
 
@@ -142,6 +142,23 @@ def explain_beliefs(world_id: str, holder: str, claim: str | None = None, subjec
     with the line heard at each hop and an answer sentence built straight from the graph."""
     _check_world_id(world_id)
     return explain.explain(world_id, holder, claim=claim, subject=subject)
+
+
+@app.post("/worlds/{world_id}/cases")
+def open_case(world_id: str, case: CaseIn) -> dict:
+    """Open a case: assign the investigator and write the briefing and first leads to the case file."""
+    _check_world_id(world_id)
+    return cases.open_case(world_id, case)
+
+
+@app.get("/worlds/{world_id}/cases/{case_id}")
+def case_file(world_id: str, case_id: str) -> dict:
+    """The case file: investigators, leads, briefing (and, from step 4.3, interviews and findings)."""
+    _check_world_id(world_id)
+    try:
+        return cases.case_file(world_id, case_id)
+    except cases.CaseNotFound:
+        raise HTTPException(status_code=404, detail=f"no case {case_id!r}")
 
 
 def _check_world_id(world_id: str) -> None:

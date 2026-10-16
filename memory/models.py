@@ -33,6 +33,14 @@ class EventIn(BaseModel):
     ts: float | None = None  # ms since epoch; defaults to now
 
 
+class CaseIn(BaseModel):
+    """An investigation. The investigator is a character outside AI Town (e.g. id "inv:vikram")."""
+    title: str  # e.g. "The missing silver hammer"
+    question: str  # what the investigator must find out
+    investigator: CharacterIn
+    id: str | None = None  # defaults to a hash of the title
+
+
 class MessageIn(BaseModel):
     author: str  # character id
     text: str

@@ -31,13 +31,16 @@ SET c.name = ch.name, c.kind = ch.kind,
     c.gullibility = coalesce(ch.gullibility, c.gullibility)
 """
 
-# Seeded social graph (village file). Re-seeding updates trust but keeps the interaction count.
+# Seeded social graph (village file). KNOWS carries trust for gossip and is also created by talking, so it
+# densifies over time; FRIEND marks only the village's lasting friendships (the structure the investigator's
+# briefing reads). Re-seeding updates trust but keeps the interaction count.
 SET_RELATIONSHIPS = """
 UNWIND $rels AS r
 MATCH (a:Character {id: r.source}), (b:Character {id: r.target})
 MERGE (a)-[k:KNOWS]->(b)
 ON CREATE SET k.interactions = 0
 SET k.trust = r.trust
+MERGE (a)-[:FRIEND]->(b)
 RETURN count(k)
 """
 
