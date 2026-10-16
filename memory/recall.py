@@ -1,0 +1,165 @@
+"""Recall: what an NPC remembers when it is about to talk to someone (docs/DATA_MODEL.md, Q2/Q3/Q5).
+
+Pure Cypher, no LLM: this sits on the conversation hot path. It replaces AI Town's vector `searchMemories`.
+"""
+import re
+
+from memory import db
+
+# Gossip ranking: confidence x |valence| x relevance, damped when the two already exchanged this claim.
+ALREADY_SHARED_DAMPING = 0.2
+
+CHARACTERS = "MATCH (c:Character) WHERE c.id IN [$me, $other] RETURN c.id, c.name"
+
+# Q2 plus "already shared": the other's belief came from mine, or mine came from theirs.
+# All OPTIONAL MATCHes come before the aggregating WITH: on FalkorDB 6.0.2 an OPTIONAL MATCH placed after
+# "OPTIONAL MATCH ... WITH <aggregation>" silently matched nothing (see RESEARCH_LOG, step 2.4).
+BELIEFS = """
+MATCH (me:Character {id: $me})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
+OPTIONAL MATCH (b)-[sh:HEARD_FROM]-(:Belief {holder: $other})
+OPTIONAL MATCH (:Character {id: $other})-[kk:KNOWS]->(s)
+OPTIONAL MATCH (b)-[:HEARD_FROM]->(:Belief)-[:HELD_BY]->(t:Character)
+WITH b, c, s, count(DISTINCT sh) > 0 AS already_shared, count(DISTINCT kk) > 0 AS other_knows,
+     collect(DISTINCT t.name) AS told_by
+WITH b, c, s, told_by, already_shared,
+     CASE WHEN s.id = $other THEN 2.0 WHEN other_knows THEN 1.5 ELSE 1.0 END AS relevance
+RETURN c.id, s.id, s.name, c.text, c.valence, b.confidence, b.origin, told_by, already_shared,
+       b.confidence * abs(c.valence) * relevance * CASE WHEN already_shared THEN $damping ELSE 1.0 END AS score
+ORDER BY score DESC, b.confidence DESC
+LIMIT $k
+"""
+
+# Q5: my overall view of the other, from everything I believe about them.
+REPUTATION = """
+MATCH (:Character {id: $me})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(:Character {id: $other})
+RETURN coalesce(sum(b.confidence * c.valence), 0.0), count(b)
+"""
+
+TRUST = """
+MATCH (:Character {id: $me})-[k:KNOWS]->(:Character {id: $other})
+RETURN k.trust, k.interactions
+"""
+
+# Q3: our most recent conversations.
+EPISODES = """
+MATCH (:Character {id: $me})-[:PARTICIPATED_IN]->(cv:Conversation {status: 'ingested'})<-[:PARTICIPATED_IN]-(:Character {id: $other})
+RETURN cv.id, cv.summary, cv.ended_at
+ORDER BY cv.ended_at DESC
+LIMIT $n
+"""
+
+
+def recall(world_id: str, me: str, other: str, k: int = 5, episodes: int = 3) -> dict:
+    g = db.world_graph(world_id)
+    if db.graph_name(world_id) not in db.client().list_graphs():
+        return _empty(me, other)
+    names = dict(g.ro_query(CHARACTERS, {"me": me, "other": other}).result_set)
+    if me not in names:
+        return _empty(me, other)
+    other_name = names.get(other, "them")
+
+    beliefs = [
+        {"claim": cid, "subject": sid, "subject_name": sname, "text": text, "valence": valence,
+         "confidence": round(conf, 3), "origin": origin, "told_by": told_by,
+         "about_other": sid == other, "already_shared": shared, "score": round(score, 3)}
+        for cid, sid, sname, text, valence, conf, origin, told_by, shared, score in g.ro_query(
+            BELIEFS, {"me": me, "other": other, "k": k, "damping": ALREADY_SHARED_DAMPING}).result_set
+    ]
+    rep_score, evidence = g.ro_query(REPUTATION, {"me": me, "other": other}).result_set[0]
+    trust_rows = g.ro_query(TRUST, {"me": me, "other": other}).result_set
+    eps = [{"conversation": cid, "summary": summary, "ended_at": ended}
+           for cid, summary, ended in g.ro_query(EPISODES, {"me": me, "other": other, "n": episodes}).result_set]
+
+    result = {
+        "me": me, "other": other, "known": True,
+        "beliefs": beliefs,
+        "reputation": {"score": round(rep_score, 3), "evidence": evidence},
+        "trust": {"trust": trust_rows[0][0], "interactions": trust_rows[0][1]} if trust_rows else None,
+        "episodes": eps,
+    }
+    result["memories"] = describe(result, names[me], other_name)
+    return result
+
+
+def describe(r: dict, my_name: str, other_name: str) -> list[str]:
+    """First-person memory lines for the NPC's prompt. Words instead of numbers, so dialogue stays natural."""
+    lines = []
+    trust = r["trust"]
+    if trust is None:
+        lines.append(f"I don't really know {other_name} yet.")
+    else:
+        talks = trust["interactions"] or 0
+        lines.append(f"I {_trust_words(trust['trust'])} {other_name}; "
+                     + (f"we've talked {talks} time(s)." if talks else "we haven't really talked yet."))
+    if r["reputation"]["evidence"]:
+        lines.append(f"My impression of {other_name} is {_reputation_words(r['reputation']['score'])}.")
+    if r["episodes"]:
+        lines.append(f"Last time {other_name} and I talked: {r['episodes'][0]['summary']}")
+    for b in r["beliefs"]:
+        sure = _confidence_words(b["confidence"])
+        b = {**b, "text": _as_me(b["text"], my_name)}
+        if b["origin"] == "witnessed":
+            line = f"I saw it myself: {b['text']}."
+        elif b["origin"] == "self":
+            line = f"I've been saying that {_lower_first(b['text'])} ({sure})."
+        else:
+            line = f"{_names(b['told_by'])} told me that {_lower_first(b['text'])} ({sure})."
+        if b["already_shared"]:
+            line += f" {other_name} and I already talked about this."
+        lines.append(line)
+    return lines
+
+
+def _empty(me: str, other: str) -> dict:
+    return {"me": me, "other": other, "known": False, "beliefs": [], "reputation": {"score": 0.0, "evidence": 0},
+            "trust": None, "episodes": [], "memories": []}
+
+
+def _confidence_words(c: float) -> str:
+    if c >= 0.8:
+        return "I'm sure of it"
+    if c >= 0.5:
+        return "I believe it"
+    if c >= 0.25:
+        return "I'm not certain"
+    return "it's only a rumor to me"
+
+
+def _trust_words(t: float) -> str:
+    if t >= 0.75:
+        return "trust"
+    if t >= 0.45:
+        return "somewhat trust"
+    return "don't fully trust"
+
+
+def _reputation_words(score: float) -> str:
+    if score <= -0.5:
+        return "very bad"
+    if score < -0.15:
+        return "bad"
+    if score <= 0.15:
+        return "mixed"
+    if score < 0.5:
+        return "good"
+    return "very good"
+
+
+def _names(names: list[str]) -> str:
+    if not names:
+        return "Someone"
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _as_me(text: str, my_name: str) -> str:
+    """'Kai stole a silver hammer from Bram' -> '... from me' in Bram's own memory (not when Bram is the subject)."""
+    first, sep, rest = text.partition(" ")
+    name = re.escape(my_name)
+    rest = re.sub(rf"\b{name}['’]s\b", "my", rest)
+    return first + sep + re.sub(rf"\b{name}\b", "me", rest)
+
+
+def _lower_first(text: str) -> str:
+    """'The merchant ...' -> 'the merchant ...' mid-sentence; names like 'Kai stole ...' stay as they are."""
+    first, sep, rest = text.partition(" ")
+    return first.lower() + sep + rest if first.lower() in {"the", "a", "an"} else text

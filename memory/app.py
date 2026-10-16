@@ -8,9 +8,9 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
-from memory import db, ingest, llm
+from memory import db, ingest, llm, recall
 from memory.config import settings
 from memory.models import CharacterIn, ConversationIn
 
@@ -102,6 +102,16 @@ def retry_failed(world_id: str) -> dict:
     """Re-ingest this world's failed conversations now instead of waiting for the retry loop."""
     _check_world_id(world_id)
     return {"world": world_id, "results": ingest.retry_failed(world_id)}
+
+
+@app.get("/worlds/{world_id}/recall")
+def recall_memories(world_id: str, me: str, other: str, k: int = Query(5, ge=1, le=20),
+                    episodes: int = Query(3, ge=0, le=10)) -> dict:
+    """What `me` remembers when about to talk to `other`: ranked gossip, reputation, trust, past talks.
+
+    Graph-only (no LLM), so it is fast enough to call before every line of dialogue."""
+    _check_world_id(world_id)
+    return recall.recall(world_id, me, other, k=k, episodes=episodes)
 
 
 def _check_world_id(world_id: str) -> None:
