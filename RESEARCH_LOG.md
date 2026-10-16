@@ -950,6 +950,53 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 **Old junk in live data:** the "Ask Meera…" claim was created before the not-a-statement filter, so it still shows up in old findings.
 
+**✅ 4.5 Verdict and debunking: `POST /worlds/{id}/cases/{case}/verdict`** [AI]
+
+**Verdict** (in `memory/cases.py`). It uses **only the case file's findings**, never the hidden events:
+
+| Verdict | Rule |
+|---|---|
+| **confirmed** | someone testified `witnessed` |
+| **distorted** | started by someone, same subject as a confirmed claim, vector distance < **0.27**: honest garbling |
+| **unfounded** | started by someone (`self`), nobody saw it, and not a distortion |
+| **unresolved** | only heard testimony; the trail ran out |
+
+- **Calibration, measured live:** the eyewitness's own garbled retellings sit at 0.18 and 0.25 from the confirmed theft; unrelated claims about the same person start at 0.31; competing stories are about *other* subjects.
+
+**Publishing** (the memory update, nothing deleted):
+- Every active belief in a debunked claim becomes `status: 'superseded'` with `valid_to` and `DEBUNKED_BY {kind, started_by, by}`.
+- **Only unfounded rumors cost trust:** each misled believer's `KNOWS` trust in the starter is ×0.5 (created if missing).
+- The case becomes `solved`, and the verdict is stored, so it's idempotent. Further interviews return 409.
+
+**Effects:**
+- **Recall** excludes superseded beliefs, so they can't be retold, and `HEAR` requires an active speaker belief, so a debunked rumor **can't spread again** even if repeated.
+- It adds memory lines: "I used to believe that …, but X's inquiry found Y started it and nobody saw it" / "…showed it was a garbled version of what really happened."
+- `scripts/investigate.py` publishes the verdict when its leads run out.
+
+**❌ → ✅ Claim-key bug, found by the verdict tests:**
+- "Kai lost Bram's hammer somewhere" and "Kai tried to fence a stolen hammer" both got the key `p:9|did|` and were **merged into one claim**. So Pip appeared as a starter of Mara's rumor and lost trust unfairly.
+- **Fix:** generic claims are keyed by their normalized text; paraphrases merge by meaning. Regression test added.
+- ⚠️ The live world still contains claims merged under the old keys, so **reset the village before recording**.
+
+**New filter:** questions ("…bicycle?") and lowercase fragments ("does that mean…") are dropped as "not a statement", seen in Gopal's live memories.
+
+**Tests:** 103 pass. `tests/test_verdict.py` has 7 cases:
+- truth vs lie vs garbling
+- publishing supersedes without deleting, and the truth is untouched
+- **only the liar loses trust:** Tom→Mara 0.3 → 0.15; Tom→Pip unchanged
+- villagers remember the correction
+- a debunked rumor can't spread again
+- the verdict is final
+- the endpoint
+
+**Live** (`case_hammer_demo`, Anjali):
+- ✅ the theft (Ramesh saw it)
+- ❌ Lakshmi's two "iron artifacts" stories
+- ❌ "Ramesh stole tools from the forge", started by Ramesh. That's a **mis-extraction** from earlier chatter, which unfairly cost Ramesh some trust.
+- 〰 Ramesh's two garbled Kabir retellings
+- **22 beliefs marked outdated**; trust lowered in Lakshmi and Ramesh.
+- Gopal's recall now says "I don't fully trust Lakshmi… I used to believe that Ramesh stole two valuable iron artifacts from Lakshmi's cart, but Inspector Anjali's inquiry found Lakshmi started it and nobody saw it." His topic switched to the true theft.
+
 ---
 
 ## Open questions

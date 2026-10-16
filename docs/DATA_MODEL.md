@@ -79,7 +79,7 @@ graph LR
 | `HEARD_FROM {at}` | Belief → Belief | **Provenance.** The listener's belief came from the speaker's belief. Can have several sources. |
 | `SAW` | Belief → Event | A root belief: the holder witnessed the event |
 | `EVIDENCE` | Belief → Message | The exact line where the holder heard it |
-| `SUPERSEDED_BY` *(4.1)* | Belief → Belief | Belief revision without deleting |
+| `DEBUNKED_BY {kind, started_by, by}` | Belief → Case | A published verdict superseded this belief (`unfounded` or `distorted`); the belief keeps `status: 'superseded'` and `valid_to`, and is never deleted |
 
 ## Rules
 
@@ -107,6 +107,7 @@ graph LR
   - the claim text must name the subject
   - for person predicates, a non-person object is replaced by the other person named in the text; if there is none, the predicate becomes `did`
   - valence is clamped to −1…1
+- **Claim keys:** person-to-person claims (`stole_from`, `helped`, …) use the structured key `subject|predicate|person`, so "stole" and "swiped" merge. Generic claims (`did`, `is`, `plans_to`, or no person object) use `subject|predicate|<normalized text>`, because a structured key like `p:9|did|` merged *different* stories.
 - **Claim dedup:**
   - First an exact `key` match.
   - Then vector similarity on `Claim.embedding`, **only among claims about the same subject**, with distance < **0.10**. FalkorDB's vector `score` is a cosine **distance** (lower means closer).
