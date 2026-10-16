@@ -77,6 +77,9 @@ graph LR
 ## Rules
 
 - **Witnessing:** each witness of an event gets a root belief with `confidence = 1.0`, `origin = 'witnessed'` and a `SAW` edge.
+  - Events come from the **narrator**, `POST /worlds/{id}/events` (`memory/narrate.py`). The event's claim uses the same key NPC gossip produces (`actor|kind|target`), so rumors before or after attach to it (by key, or by meaning for paraphrases), and the claim gets `REFERS_TO` the event.
+  - A witness who had only *heard* the rumor is upgraded to `witnessed`.
+  - Sending the same event again is harmless, because the id is a hash of the event.
 - **Hearing:** when A tells B a claim, B's incoming confidence is `confidence(A's belief) × trust(B→A)`. If B has no `KNOWS` edge to A, the trust is **B's `gullibility`**, the personality trait: suspicious Tom has 0.3, gossipy Mara has 0.7. If that isn't set either, the trust is `0.5`.
 - **Hearing again from another source:** the beliefs combine as `1 − (1 − old)(1 − incoming)`, and a second `HEARD_FROM` edge is added. More independent sources make a belief more certain.
 - **Inventing:** if a speaker asserts a claim it has no belief for, the speaker gets a belief with `origin = 'self'` and confidence 0.6. This is how rumors and lies are born, and `explain` shows that they have no witness.
