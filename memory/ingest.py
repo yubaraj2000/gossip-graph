@@ -6,7 +6,7 @@ import time
 from falkordb import Graph
 
 from memory import db, extract, llm
-from memory.models import CharacterIn, ConversationIn
+from memory.models import CharacterIn, ConversationIn, RelationshipIn
 
 # Confidence of a belief the speaker asserts without any traceable source (invented, or first-hand but unrecorded).
 INVENTED_CONFIDENCE = 0.6
@@ -15,6 +15,11 @@ INVENTED_CONFIDENCE = 0.6
 DEDUP_MAX_DISTANCE = 0.10
 # An 'ingesting' conversation older than this is assumed to belong to a crashed run and may be taken again.
 STALE_INGEST_MS = 10 * 60 * 1000
+# Claims this close to neutral are not gossip ("Lakshmi heard fascinating tales lately", valence 0.0). Recall ranks
+# by |valence|, so they would never surface anyway; dropping them keeps the graph readable.
+MIN_ABS_VALENCE = 0.15
+# Forms of address dropped when matching names ("Pandit ji", "Gopal bhai", "Balwant Singh").
+HONORIFICS = {"ji", "bhai", "didi", "sahib", "saab", "baba", "kaka", "chacha", "singh", "mr", "mrs", "the"}
 # Predicates whose object must be a person; otherwise the claim is downgraded to "did".
 PERSON_PREDICATES = {"stole_from", "attacked", "helped", "lied_to", "gave_to", "owes", "likes", "dislikes"}
 
@@ -24,6 +29,16 @@ MERGE (c:Character {id: ch.id})
 SET c.name = ch.name, c.kind = ch.kind,
     c.identity = CASE WHEN ch.identity = '' THEN c.identity ELSE ch.identity END,
     c.gullibility = coalesce(ch.gullibility, c.gullibility)
+"""
+
+# Seeded social graph (village file). Re-seeding updates trust but keeps the interaction count.
+SET_RELATIONSHIPS = """
+UNWIND $rels AS r
+MATCH (a:Character {id: r.source}), (b:Character {id: r.target})
+MERGE (a)-[k:KNOWS]->(b)
+ON CREATE SET k.interactions = 0
+SET k.trust = r.trust
+RETURN count(k)
 """
 
 # Atomically claim the conversation for ingestion. Queries on one graph run one at a time, so when AI Town
@@ -151,6 +166,11 @@ def upsert_characters(g: Graph, chars: list[CharacterIn]) -> None:
     g.query(UPSERT_CHARACTERS, {"chars": [c.model_dump() for c in chars]})
 
 
+def set_relationships(g: Graph, rels: list[RelationshipIn]) -> int:
+    """Create or update KNOWS trust edges; returns how many were set (pairs with unknown ids are skipped)."""
+    return g.query(SET_RELATIONSHIPS, {"rels": [r.model_dump() for r in rels]}).result_set[0][0]
+
+
 def ingest_conversation(world_id: str, conv: ConversationIn) -> dict:
     """Store a finished conversation and turn its claims into beliefs. Idempotent per conversation id."""
     db.ensure_world(world_id)
@@ -254,9 +274,12 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
         if valence is None:
             dropped.append({**rc, "reason": "malformed claim"})
             continue
+        if abs(valence) < MIN_ABS_VALENCE:
+            dropped.append({**rc, "reason": "neutral, not gossip"})
+            continue
         parsed.append((idx, valence, rc))
     for idx, valence, rc in sorted(parsed, key=lambda p: -1 if p[0] is None else p[0]):
-        subject = people.get(_text(rc.get("subject")).lower())
+        subject = _resolve_person(_text(rc.get("subject")), people)
         text = _text(rc.get("text"))
         if idx is None or not 0 <= idx < len(msgs):
             dropped.append({**rc, "reason": "message_index out of range"})
@@ -264,14 +287,14 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
         if subject is None:
             dropped.append({**rc, "reason": "unknown subject"})
             continue
-        if not _mentions(text, id_to_name[subject]):
+        if not _names_person(text, id_to_name[subject]):
             dropped.append({**rc, "reason": "text does not name the subject"})
             continue
         predicate = rc.get("predicate") if rc.get("predicate") in extract.PREDICATES else "did"
-        obj = people.get(_text(rc.get("object")).lower())
+        obj = _resolve_person(_text(rc.get("object")), people)
         if predicate in PERSON_PREDICATES and obj is None:
             # e.g. object "a silver hammer" for stole_from: take the other person named in the text instead
-            obj = next((cid for name, cid in people.items() if cid != subject and _mentions(text, name)), None)
+            obj = next((cid for name, cid in people.items() if cid != subject and _names_person(text, name)), None)
             if obj is None:
                 predicate = "did"
         object_key = obj or _normalize(_text(rc.get("object")))
@@ -314,6 +337,22 @@ def _as_number(value, kind):
 
 def _text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _resolve_person(raw: str, people: dict[str, str]) -> str | None:
+    """Character id for a name as the model wrote it: exact, or an unambiguous match ignoring forms of address
+    ("Balwant Singh" -> Balwant, "Shastri ji" / "Pandit ji" -> Pandit Shastri). Unknown people -> None."""
+    exact = people.get(raw.lower())
+    if exact or not raw:
+        return exact
+    words = {w for w in re.findall(r"[a-z]+", raw.lower()) if w not in HONORIFICS}
+    matches = {cid for name, cid in people.items() if words & set(re.findall(r"[a-z]+", name.lower()))}
+    return matches.pop() if len(matches) == 1 else None
+
+
+def _names_person(text: str, name: str) -> bool:
+    """The text refers to this person by any word of their name ("Shastri ji" names Pandit Shastri)."""
+    return any(_mentions(text, w) for w in name.split() if w.lower() not in HONORIFICS)
 
 
 def _mentions(text: str, name: str) -> bool:

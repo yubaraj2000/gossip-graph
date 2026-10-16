@@ -80,17 +80,19 @@ def test_validation_fixes_or_drops_bad_claims():
          "text": "Kai stole a silver hammer from Bram", "valence": -3},
         {"message_index": 1, "subject": "Kai", "predicate": "helped", "object": "the miller",
          "text": "Kai helped the miller", "valence": 0.5},
-        {"message_index": 0, "subject": "the merchant", "predicate": "is", "object": "", "text": "x", "valence": 0},
+        {"message_index": 0, "subject": "the merchant", "predicate": "is", "object": "", "text": "x", "valence": -0.5},
         {"message_index": 1, "subject": "Tom", "predicate": "likes", "object": "rare spices",
          "text": "I've had my eye on that merchant", "valence": 0.5},
         {"message_index": 7, "subject": "Kai", "predicate": "is", "object": "", "text": "Kai is rude", "valence": -0.5},
+        {"message_index": 0, "subject": "Kai", "predicate": "did", "object": "",
+         "text": "Kai heard fascinating tales lately", "valence": 0.0},
     ], msgs, people)
     assert [(c["key"], c["valence"], c["speaker"]) for c in ok] == [
         ("p:9|stole_from|p:1", -1.0, "p:1"),  # object fixed from the text, valence clamped
         ("p:9|did|miller", 0.5, "p:2"),        # no person to help -> downgraded to "did"
     ]
     assert sorted(d["reason"] for d in dropped) == [
-        "message_index out of range", "text does not name the subject", "unknown subject"]
+        "message_index out of range", "neutral, not gossip", "text does not name the subject", "unknown subject"]
 
 
 def test_api_ingest_endpoint(village):
@@ -105,3 +107,17 @@ def test_api_ingest_endpoint(village):
     assert client.post(f"/worlds/{world_id}/conversations", json=body).json()["status"] == "skipped"
     body["messages"][0]["author"] = "p:4"  # not a participant
     assert client.post(f"/worlds/{world_id}/conversations", json=body).status_code == 422
+
+
+def test_names_with_forms_of_address_resolve_unambiguously():
+    people = {"bram": "p:1", "pandit shastri": "p:5", "balwant": "p:6", "gopal": "p:7"}
+    resolve = ingest._resolve_person
+    assert resolve("Balwant Singh", people) == "p:6"
+    assert resolve("Shastri ji", people) == "p:5"
+    assert resolve("Pandit ji", people) == "p:5"
+    assert resolve("Gopal bhai", people) == "p:7"
+    assert resolve("Ramu Patel", people) is None  # invented outsider
+    assert resolve("", people) is None
+    assert resolve("Pandit Gopal", {"pandit shastri": "p:5", "gopal": "p:7"}) is None  # ambiguous -> no guess
+    assert ingest._names_person("Shastri ji is wary of gossip", "Pandit Shastri")
+    assert not ingest._names_person("The priest is wary of gossip", "Pandit Shastri")

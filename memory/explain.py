@@ -7,12 +7,15 @@ from memory import db
 
 MAX_PATHS_PER_BELIEF = 5
 
-# Q4: each path follows HEARD_FROM from the holder's belief back to a root (witnessed, or said first).
+# Q4: each path follows HEARD_FROM from the holder's belief back to its origin. Only 'heard' beliefs relay a
+# rumor: a path stops at the first belief that was witnessed or said first, even if that person later also
+# heard it from someone else (that later edge is corroboration, not where the belief came from).
 PATHS = """
 MATCH (:Character {id: $holder})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
 WHERE ($claim IS NULL OR c.id = $claim) AND ($subject IS NULL OR s.id = $subject)
 MATCH p = (b)-[:HEARD_FROM*0..8]->(root:Belief)
-WHERE NOT (root)-[:HEARD_FROM]->()
+WHERE (root.origin <> 'heard' OR NOT (root)-[:HEARD_FROM]->())
+  AND all(x IN nodes(p)[0..size(nodes(p)) - 1] WHERE x.origin = 'heard')
 OPTIONAL MATCH (root)-[:SAW]->(e:Event)
 OPTIONAL MATCH (c)-[:REFERS_TO]->(ev:Event)
 RETURN c.id, c.text, s.id, c.valence, b.confidence, b.origin,

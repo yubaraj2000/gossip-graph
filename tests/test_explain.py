@@ -75,3 +75,21 @@ def test_explain_endpoint(gossip):
     assert r.status_code == 200 and len(r.json()["beliefs"]) == 2
     assert client.get(f"/worlds/{gossip}/explain").status_code == 422
     assert client.get("/worlds/bad id/explain", params={"holder": "p:4"}).status_code == 422
+
+
+def test_a_rumor_traces_to_whoever_said_it_first_not_to_later_corroboration(village):
+    """Seen live: Ramesh said it first, later also heard it from Balwant. Explain must not credit Balwant."""
+    world_id, scripted, _ = village
+    for cid in ("c:1", "c:2", "c:3", "c:4"):
+        scripted[cid] = [{"message_index": 0, **THEFT}]
+    ingest.ingest_conversation(world_id, two_way("c:1", "p:1", "p:2", "Kai stole from me!"))   # Bram says it first
+    ingest.ingest_conversation(world_id, two_way("c:2", "p:3", "p:4", "Kai stole from Bram!"))  # Mara, independently
+    ingest.ingest_conversation(world_id, two_way("c:3", "p:3", "p:1", "Bram, Kai stole from you!"))  # Mara tells Bram
+    ingest.ingest_conversation(world_id, two_way("c:4", "p:1", "p:9", "Kai, you stole from me!"))  # irrelevant to Tom
+    bram = belief(explain.explain(world_id, "p:1"), THEFT_TEXT)
+    assert bram["origin"] == "self"
+    assert bram["sentence"] == "Nobody told me; I said it first."
+    assert [p["chain"] for p in bram["paths"]] == [["p:1"]]
+    pip = belief(explain.explain(world_id, "p:2"), THEFT_TEXT)  # Pip heard it from Bram, not via Mara
+    assert [p["chain"] for p in pip["paths"]] == [["p:2", "p:1"]]
+    assert pip["sentence"] == "Bram told me. Bram started it, and nobody saw it happen."
