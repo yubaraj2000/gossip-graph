@@ -1046,41 +1046,6 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 ---
 
-### Oct 17, 01:10 IST — Session handoff (new session starts here)
-
-**Status:**
-- **Phases 0–3 done.**
-- **Phase 4 done except 4.6:** 4.1 case file and briefing, 4.2–4.3 interviews, 4.4 crash and resume, 4.5 verdict and debunking, 4.7 investigator walking in AI Town.
-- **Tests:** 104 pass (`uv run pytest`), plus 2 opt-in live tests (`RUN_LIVE=1`). AI Town 53/53 (`cd world && npm test`).
-- **Git:** all work committed and pushed. The last commit is `adc3419` (docs: log step 4.7).
-- **Deadline:** feature freeze **Oct 18 14:00 IST**; submit by Oct 18 21:00 (the hard deadline is 23:59).
-
-**Next steps, in order:**
-1. **4.6:** separate villages (light). A background village fed by replayed conversations, plus an isolation check: Kabir is a thief in one world, a stranger in another. About 1 h.
-2. **Phase 5:** visuals. A graph panel, "why do you think that?" path highlight, an insights panel (bridges / hubs / circles / reputation), and a case board.
-3. **Reset to a fresh village before recording** (wipe, deploy, init, seed). The live world contains claims merged by the old coarse `did`/`is` key and junk from before the filters.
-4. **Phase 6:**
-   - README: architecture, data model, every Cypher query, setup, AI Town credit, AI disclosure, track.
-   - Demo video script and recording.
-   - Optional blog post.
-
-**Live state** (on the Mac, if still running):
-- **Worlds:** AI Town world `m171vdd5drtp1tf26ktcjee3xn8gcs5q`, graph `world_m171…`.
-- **Cases:** `case_hammer` (solved), `case_hammer_demo` (solved), `case_town_1` (solved, in-town run).
-- **Narrator theft event:** `e_3e085b9652ec` (claim `k_7f76a6656372`), "Kabir stole a silver hammer from Ramesh", witnessed by Ramesh.
-- **Investigator AI Town players:** Vikram `p:2990`, Anjali `p:3240`. Idle humans are removed after 5 minutes.
-
-**How to start everything:** see `docs/WALKTHROUGH.md` and Claude's memory runbook.
-
-1. `docker compose up -d` (FalkorDB, repo root)
-2. `cd world && docker compose up -d backend dashboard` (Convex)
-3. `cd world && npx vite --host 127.0.0.1 --port 5173` (town at http://127.0.0.1:5173/ai-town)
-4. `scripts/ollama-tunnel.sh start` (or `watch`)
-5. `scripts/run_memory.sh --reload --reload-dir memory` (service on :8100)
-6. Keep the Mac awake with `caffeinate -dimsu`, and keep a browser tab on the town open (it sends the world heartbeat).
-
----
-
 ## Open questions
 
 - 🔬 **4.6 scope:** a replay village from recorded conversations? A `GRAPH.COPY` template village?
