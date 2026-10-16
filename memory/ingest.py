@@ -307,7 +307,8 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
         if subject is None:
             dropped.append({**rc, "reason": "unknown subject"})
             continue
-        if NOT_A_STATEMENT.match(text):
+        if NOT_A_STATEMENT.match(text) or text.endswith("?") or text[:1].islower():
+            # instructions/plans, questions, and lowercase fragments ("does that mean you've got it fixed…")
             dropped.append({**rc, "reason": "not a statement"})
             continue
         if not _names_person(text, id_to_name[subject]):
@@ -320,7 +321,10 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
             obj = next((cid for name, cid in people.items() if cid != subject and _names_person(text, name)), None)
             if obj is None:
                 predicate = "did"
-        object_key = obj or _normalize(_text(rc.get("object")))
+        # A structured key only identifies a claim when it names two people ("kabir|stole_from|p:0": "stole" and
+        # "swiped" merge). Generic claims ("Kai did …", "Kai is …") would all collapse into "p:9|did|", so their
+        # key is their own normalized text, and paraphrases of them merge by meaning (resolve_claim's vector step).
+        object_key = obj if predicate in PERSON_PREDICATES and obj else _normalize_text(text)
         ok.append({
             "message_index": idx,
             "speaker": msgs[idx]["author"],
@@ -380,6 +384,10 @@ def _names_person(text: str, name: str) -> bool:
 
 def _mentions(text: str, name: str) -> bool:
     return re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE) is not None
+
+
+def _normalize_text(text: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9' ]+", " ", text.lower()).split())
 
 
 def _normalize(s: str) -> str:

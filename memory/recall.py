@@ -45,6 +45,15 @@ MATCH (:Character {id: $me})-[k:KNOWS]->(:Character {id: $other})
 RETURN k.trust, k.interactions
 """
 
+# Beliefs a published verdict corrected: kept as 'superseded' (memory updates without deleting history).
+DEBUNKED = """
+MATCH (:Character {id: $me})<-[:HELD_BY]-(b:Belief {status: 'superseded'})-[:OF]->(c:Claim),
+      (b)-[d:DEBUNKED_BY]->(:Case)
+RETURN c.text, d.kind, d.started_by, d.by
+ORDER BY b.valid_to DESC
+LIMIT 2
+"""
+
 # Q3: our most recent conversations.
 EPISODES = """
 MATCH (:Character {id: $me})-[:PARTICIPATED_IN]->(cv:Conversation {status: 'ingested'})<-[:PARTICIPATED_IN]-(:Character {id: $other})
@@ -77,9 +86,12 @@ def recall(world_id: str, me: str, other: str, k: int = 5, episodes: int = 3) ->
     eps = [{"conversation": cid, "summary": summary, "ended_at": ended}
            for cid, summary, ended in g.ro_query(EPISODES, {"me": me, "other": other, "n": episodes}).result_set]
 
+    debunked = [{"text": text, "kind": kind, "started_by": started_by, "by": by}
+                for text, kind, started_by, by in g.ro_query(DEBUNKED, {"me": me}).result_set]
     result = {
         "me": me, "other": other, "known": True,
         "beliefs": beliefs,
+        "debunked": debunked,
         "reputation": {"score": round(rep_score, 3), "evidence": evidence},
         "trust": {"trust": trust_rows[0][0], "interactions": trust_rows[0][1]} if trust_rows else None,
         "episodes": eps,
@@ -125,6 +137,14 @@ def describe(r: dict, my_name: str, other_name: str) -> list[str]:
         lines.append(f"My impression of {other_name} is {_reputation_words(r['reputation']['score'])}.")
     if r["episodes"]:
         lines.append(f"Last time {other_name} and I talked: {r['episodes'][0]['summary']}")
+    for d in r.get("debunked", []):
+        text = lower_first(as_me(d["text"], my_name).rstrip("."))
+        if d["kind"] == "distorted":
+            lines.append(f"I had heard that {text}, but {d['by']}'s inquiry showed it was a garbled version of "
+                         "what really happened.")
+        else:
+            lines.append(f"I used to believe that {text}, but {d['by']}'s inquiry found {and_names(d['started_by'])} "
+                         "started it and nobody saw it.")
     for b in r["beliefs"]:
         sure = _confidence_words(b["confidence"])
         b = {**b, "text": as_me(b["text"], my_name)}
@@ -141,8 +161,8 @@ def describe(r: dict, my_name: str, other_name: str) -> list[str]:
 
 
 def _empty(me: str, other: str) -> dict:
-    return {"me": me, "other": other, "known": False, "beliefs": [], "reputation": {"score": 0.0, "evidence": 0},
-            "trust": None, "episodes": [], "memories": [], "topic": None}
+    return {"me": me, "other": other, "known": False, "beliefs": [], "debunked": [],
+            "reputation": {"score": 0.0, "evidence": 0}, "trust": None, "episodes": [], "memories": [], "topic": None}
 
 
 def _confidence_words(c: float) -> str:

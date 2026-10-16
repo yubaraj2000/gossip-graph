@@ -20,6 +20,11 @@ from memory.models import CaseIn, CharacterIn, ConversationIn
 # 0.33-0.38; unrelated chatter from about 0.42 up.
 CASE_RELEVANCE = 0.40
 TESTIMONY_MAX = 4
+# An unfounded claim about the same person this close to a confirmed one is a garbled retelling of it, not a lie
+# (live: the eyewitness's own garbled versions at 0.18 and 0.25; unrelated claims about the same person from 0.31).
+DISTORTION_MAX = 0.27
+# Publishing a verdict halves the trust that each misled believer had in whoever started an unfounded rumor.
+TRUST_PENALTY = 0.5
 
 OPEN_CASE = """
 MERGE (k:Case {id: $id})
@@ -77,7 +82,7 @@ OPTIONAL MATCH (k)-[:HAS_LEAD]->(ld:Lead)-[:TARGET]->(t:Character)
 WITH k, investigators,
      collect({target: t.id, name: t.name, kind: ld.kind, reason: ld.reason, priority: ld.priority,
               status: ld.status, created_at: ld.created_at, done_at: ld.done_at}) AS leads
-RETURN k.id, k.title, k.question, k.status, k.opened_at, k.briefing, investigators, leads
+RETURN k.id, k.title, k.question, k.status, k.opened_at, k.briefing, investigators, leads, k.verdict
 """
 
 
@@ -155,7 +160,7 @@ MERGE (ld)-[:TARGET]->(t)
 FINDINGS = """
 MATCH (:Case {id: $case})-[:HAS_FINDING]->(f:Finding)-[:ABOUT_CLAIM]->(c:Claim)
 MATCH (s:Character) WHERE s.id = f.said_by
-RETURN c.id, c.text, s.name, f.testimony, f.sources, f.line, f.at
+RETURN c.id, c.text, s.name, s.id, f.testimony, f.sources, f.line, f.at
 ORDER BY f.at
 """
 
@@ -165,6 +170,34 @@ MATCH (p:Character)-[:PARTICIPATED_IN]->(cv)
 RETURN cv.id, cv.ended_at, cv.summary, collect(p.name)
 ORDER BY cv.ended_at
 """
+
+
+NEAREST_CONFIRMED = """
+MATCH (u:Claim {id: $claim})-[:ABOUT]->(s:Character)<-[:ABOUT]-(c:Claim)
+WHERE c.id IN $confirmed AND u.embedding IS NOT NULL AND c.embedding IS NOT NULL
+RETURN c.text, vec.cosineDistance(u.embedding, c.embedding) AS d
+ORDER BY d LIMIT 1
+"""
+
+# Publishing: every active belief in a debunked claim is kept but marked superseded (never deleted).
+SUPERSEDE = """
+MATCH (b:Belief {claim: $claim, status: 'active'})-[:HELD_BY]->(h:Character), (k:Case {id: $case})
+SET b.status = 'superseded', b.valid_to = $ts
+MERGE (b)-[d:DEBUNKED_BY]->(k)
+SET d.kind = $kind, d.started_by = $started_by, d.by = $by
+RETURN h.id
+"""
+
+LOWER_TRUST = """
+UNWIND $pairs AS p
+MATCH (a:Character {id: p[0]}), (s:Character {id: p[1]})
+MERGE (a)-[k:KNOWS]->(s)
+ON CREATE SET k.trust = coalesce(a.gullibility, 0.5) * $penalty, k.interactions = 0
+ON MATCH SET k.trust = k.trust * $penalty
+RETURN a.name, s.name, k.trust
+"""
+
+SOLVE = "MATCH (k:Case {id: $case}) SET k.status = 'solved', k.solved_at = $ts, k.verdict = $verdict"
 
 
 class CaseClosed(RuntimeError):
@@ -192,7 +225,7 @@ def case_file(world_id: str, case_id: str) -> dict:
     rows = db.world_graph(world_id).ro_query(CASE_FILE, {"case": case_id}).result_set
     if not rows:
         raise CaseNotFound(case_id)
-    cid, title, question, status, opened_at, report, investigators, leads = rows[0]
+    cid, title, question, status, opened_at, report, investigators, leads, verdict = rows[0]
     g = db.world_graph(world_id)
     order = {"open": 0, "done": 1, "dropped": 2}
     return {
@@ -202,9 +235,11 @@ def case_file(world_id: str, case_id: str) -> dict:
                         key=lambda ld: (order.get(ld["status"], 9), ld["priority"], ld["created_at"])),
         "interviews": [{"conversation": c, "at": at, "summary": summ, "participants": who}
                        for c, at, summ, who in g.ro_query(INTERVIEWS, {"case": case_id}).result_set],
-        "findings": [{"claim": c, "text": text, "said_by": by, "testimony": t, "sources": src, "line": line, "at": at}
-                     for c, text, by, t, src, line, at in g.ro_query(FINDINGS, {"case": case_id}).result_set],
+        "findings": [{"claim": c, "text": text, "said_by": by, "said_by_id": by_id, "testimony": t, "sources": src,
+                      "line": line, "at": at}
+                     for c, text, by, by_id, t, src, line, at in g.ro_query(FINDINGS, {"case": case_id}).result_set],
         "briefing": json.loads(report) if report else None,
+        "verdict": json.loads(verdict) if verdict else None,
     }
 
 
@@ -314,6 +349,74 @@ def interview(world_id: str, case_id: str, target: str | None = None) -> dict:
     return {"case": case_id, "status": "interviewed", "investigator": inv_name, "interviewee": who_name,
             "transcript": [{"speaker": inv_name if a == inv_id else who_name, "text": t} for a, t in lines],
             "findings": findings, "new_leads": new_leads}
+
+
+def verdict(world_id: str, case_id: str) -> dict:
+    """Judge every claim in the findings, then publish: superseded beliefs for debunked claims and lower trust
+    in whoever started an unfounded rumor. Uses only the case file (testimony), never the hidden events.
+    Idempotent: a solved case returns its stored verdict without publishing again."""
+    g = db.world_graph(world_id)
+    file = case_file(world_id, case_id)
+    if file["verdict"]:
+        return file["verdict"]
+    active = [i for i in file["investigators"] if i["active"]]
+    by = active[0]["name"] if active else "the inquiry"
+    claims: dict[str, dict] = {}
+    for f in file["findings"]:
+        if ingest.NOT_A_STATEMENT.match(f["text"]):
+            continue
+        c = claims.setdefault(f["claim"], {"claim": f["claim"], "text": f["text"], "witnesses": [], "started_by": [],
+                                           "started_by_ids": [], "sources": []})
+        if f["testimony"] == "witnessed":
+            c["witnesses"].append(f["said_by"])
+        elif f["testimony"] == "self":
+            c["started_by"].append(f["said_by"])
+            c["started_by_ids"].append(f["said_by_id"])
+        else:
+            c["sources"] += f["sources"]
+
+    confirmed = [c for c in claims.values() if c["witnesses"]]
+    rest = [c for c in claims.values() if not c["witnesses"]]
+    unfounded, distorted, unresolved = [], [], []
+    for c in rest:
+        if not c["started_by"]:
+            unresolved.append(c)
+            continue
+        near = g.ro_query(NEAREST_CONFIRMED, {"claim": c["claim"],
+                                              "confirmed": [x["claim"] for x in confirmed]}).result_set
+        if near and near[0][1] < DISTORTION_MAX:
+            distorted.append({**c, "retelling_of": near[0][0]})
+        else:
+            unfounded.append(c)
+
+    ts = time.time() * 1000
+    superseded, trust_changes = 0, []
+    for kind, group in (("unfounded", unfounded), ("distorted", distorted)):
+        for c in group:
+            believers = [r[0] for r in g.query(SUPERSEDE, {"claim": c["claim"], "case": case_id, "ts": ts, "kind": kind,
+                                                            "started_by": c["started_by"], "by": by}).result_set]
+            superseded += len(believers)
+            if kind == "unfounded":  # honest garbling of a true event costs nobody their reputation
+                pairs = [[b, s] for b in believers for s in c["started_by_ids"]
+                         if b != s and not b.startswith("inv:")]
+                for who, whom, trust in g.query(LOWER_TRUST, {"pairs": pairs, "penalty": TRUST_PENALTY}).result_set:
+                    trust_changes.append({"villager": who, "trusts_less": whom, "trust": round(trust, 3)})
+
+    t = lambda c: c["text"].rstrip(".")  # noqa: E731
+    summary = [f"✅ Confirmed: {t(c)}. {_and(c['witnesses'])} saw it happen." for c in confirmed]
+    summary += [f"❌ Unfounded: {t(c)}. {_and(c['started_by'])} started it; nobody saw it." for c in unfounded]
+    summary += [f"〰 Distorted: {t(c)}. A garbled retelling of \"{c['retelling_of'].rstrip('.')}\" by "
+                f"{_and(c['started_by'])}." for c in distorted]
+    summary += [f"❓ Unresolved: {t(c)}. Traced back as far as {_and(sorted(set(c['sources'])))}." for c in unresolved]
+    summary.append(f"Village memory corrected: {superseded} belief(s) marked outdated (kept, not deleted)"
+                   + (f"; trust lowered in {_and(sorted({t['trusts_less'] for t in trust_changes}))}."
+                      if trust_changes else "."))
+    strip = lambda cs: [{k: v for k, v in c.items() if k != "started_by_ids"} for c in cs]  # noqa: E731
+    result = {"case": case_id, "status": "solved", "by": by, "confirmed": strip(confirmed),
+              "unfounded": strip(unfounded), "distorted": strip(distorted), "unresolved": strip(unresolved),
+              "published": {"beliefs_superseded": superseded, "trust_lowered": trust_changes}, "summary": summary}
+    g.query(SOLVE, {"case": case_id, "ts": ts, "verdict": json.dumps(result)})
+    return result
 
 
 def _testify(text: str, origin: str, sources: list[str], my_name: str) -> str:

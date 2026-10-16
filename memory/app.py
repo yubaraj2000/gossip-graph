@@ -189,6 +189,17 @@ def interview(world_id: str, case_id: str, target: str | None = None) -> dict:
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.post("/worlds/{world_id}/cases/{case_id}/verdict")
+def case_verdict(world_id: str, case_id: str) -> dict:
+    """Judge the claims in the case file (confirmed / unfounded / distorted / unresolved) and publish it: debunked
+    beliefs become 'superseded' (never deleted) and misled villagers trust the rumor's starter less."""
+    _check_world_id(world_id)
+    try:
+        return cases.verdict(world_id, case_id)
+    except cases.CaseNotFound:
+        raise HTTPException(status_code=404, detail=f"no case {case_id!r}")
+
+
 def _check_world_id(world_id: str) -> None:
     try:
         db.graph_name(world_id)

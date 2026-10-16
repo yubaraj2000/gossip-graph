@@ -4,7 +4,8 @@
 
 The agent keeps nothing between runs: everything it learns is written to the case file in the graph.
 --crash-after N kills the process abruptly after N interviews (the Phase 4.4 demo). Run it again with another
-investigator and they resume from the case file without repeating an interview.
+investigator and they resume from the case file without repeating an interview. When the leads run out, the
+investigator publishes the verdict, which corrects the village's memory.
 """
 import argparse
 import os
@@ -50,7 +51,9 @@ def main() -> None:
     while True:
         r = http.post(f"/cases/{args.case}/interview").raise_for_status().json()
         if r["status"] == "no_open_leads":
-            print("\n✅ No open leads left.")
+            print("\n✅ No open leads left. Publishing the verdict:\n")
+            for line in http.post(f"/cases/{args.case}/verdict").raise_for_status().json()["summary"]:
+                print(f"   {line}")
             break
         done += 1
         print(f"\n🎙  Interview {done}: {r['interviewee']}")

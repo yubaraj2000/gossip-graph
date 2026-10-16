@@ -23,13 +23,21 @@ FENCE = {"subject": "Kai", "predicate": "did", "object": "",
 ALIASES = {"Kai swiped Bram's silver hammer": "Kai stole a silver hammer from Bram"}
 
 
+# Texts the fake embedder puts at about 0.18 cosine distance from another text: a garbled retelling, not the
+# same claim (dedup merges below 0.10) but close enough to count as a distortion (below 0.27).
+DISTORTIONS = {"Kai lost Bram's hammer somewhere": "Kai stole a silver hammer from Bram"}
+
+
 def fake_embed(texts):
     out = []
     for t in texts:
-        rng = random.Random(hashlib.md5(ALIASES.get(t, t).encode()).hexdigest())
+        rng = random.Random(hashlib.md5(ALIASES.get(t, DISTORTIONS.get(t, t)).encode()).hexdigest())
         v = [rng.gauss(0, 1) for _ in range(1024)]
         if t in ALIASES:
             v[0] += 0.5  # close, but not identical
+        if t in DISTORTIONS:
+            noise = random.Random(t)
+            v = [x + 0.7 * noise.gauss(0, 1) for x in v]
         out.append(v)
     return out
 

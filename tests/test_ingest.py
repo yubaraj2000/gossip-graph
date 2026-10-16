@@ -91,7 +91,7 @@ def test_validation_fixes_or_drops_bad_claims():
     ], msgs, people)
     assert [(c["key"], c["valence"], c["speaker"]) for c in ok] == [
         ("p:9|stole_from|p:1", -1.0, "p:1"),  # object fixed from the text, valence clamped
-        ("p:9|did|miller", 0.5, "p:2"),        # no person to help -> downgraded to "did"
+        ("p:9|did|kai helped the miller", 0.5, "p:2"),  # no person to help -> "did", keyed by its own text
     ]
     assert sorted(d["reason"] for d in dropped) == [
         "message_index out of range", "neutral, not gossip", "not a statement", "text does not name the subject",
@@ -124,3 +124,27 @@ def test_names_with_forms_of_address_resolve_unambiguously():
     assert resolve("Pandit Gopal", {"pandit shastri": "p:5", "gopal": "p:7"}) is None  # ambiguous -> no guess
     assert ingest._names_person("Shastri ji is wary of gossip", "Pandit Shastri")
     assert not ingest._names_person("The priest is wary of gossip", "Pandit Shastri")
+
+
+def test_different_generic_claims_about_one_person_stay_separate(village):
+    """Seen in the verdict tests: "Kai lost Bram's hammer" and "Kai tried to fence it" both keyed p:9|did| and merged."""
+    world_id, scripted, _ = village
+    scripted["c:1"] = [{"message_index": 0, "subject": "Kai", "predicate": "did", "object": "",
+                        "text": "Kai tried to fence a stolen hammer", "valence": -1},
+                       {"message_index": 0, "subject": "Kai", "predicate": "did", "object": "",
+                        "text": "Kai sneaks around before dawn", "valence": -0.3}]
+    ingest.ingest_conversation(world_id, two_way("c:1", "p:3", "p:4", "Kai tried to fence it, and he sneaks around."))
+    claims = db.world_graph(world_id).ro_query("MATCH (c:Claim) RETURN c.text ORDER BY c.text").result_set
+    assert claims == [["Kai sneaks around before dawn"], ["Kai tried to fence a stolen hammer"]]
+
+
+def test_questions_and_fragments_are_not_claims():
+    people = {"tom": "p:4"}
+    msgs = [{"author": "p:1"}]
+    _, dropped = ingest._validate([
+        {"message_index": 0, "subject": "Tom", "predicate": "did", "object": "", "valence": -0.5,
+         "text": "Did Tom really carry milk on a rickety old bicycle?"},
+        {"message_index": 0, "subject": "Tom", "predicate": "did", "object": "", "valence": -0.5,
+         "text": "does that mean Tom has it fixed in time"},
+    ], msgs, people)
+    assert [d["reason"] for d in dropped] == ["not a statement", "not a statement"]
