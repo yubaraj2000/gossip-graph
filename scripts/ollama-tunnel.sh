@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Forward the Ubuntu box's Ollama (127.0.0.1:11434 there) to this Mac on 127.0.0.1:11435.
-# Usage: scripts/ollama-tunnel.sh [start|stop|status]
+# Usage: scripts/ollama-tunnel.sh [start|stop|status|watch]
 set -euo pipefail
 
 HOST="${OLLAMA_SSH_HOST:-oditek@192.168.29.235}"
@@ -29,8 +29,20 @@ case "${1:-start}" in
       exit 1
     fi
     ;;
+  watch)
+    # Keep the tunnel alive across Mac sleep/wake: check every 20 s, reopen when Ollama is unreachable.
+    echo "watching tunnel (Ctrl+C to stop)"
+    while true; do
+      if ! curl -sf --max-time 5 "http://127.0.0.1:${LOCAL_PORT}/api/version" >/dev/null; then
+        echo "$(date +%H:%M:%S) tunnel down, reopening"
+        pkill -f "ssh .*${FORWARD}" || true
+        "$0" start || true
+      fi
+      sleep 20
+    done
+    ;;
   *)
-    echo "usage: $0 [start|stop|status]" >&2
+    echo "usage: $0 [start|stop|status|watch]" >&2
     exit 2
     ;;
 esac
