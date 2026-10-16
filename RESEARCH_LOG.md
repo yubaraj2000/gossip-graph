@@ -34,6 +34,7 @@ Newest entries go at the bottom of each section.
 | Oct 16 | **Investigator agent becomes the Phase 4 centerpiece** (proposed by [me], shaped with [AI]) | One scene covers every Track 2 focus: memory surviving a crash, handoff and shared state through the case file, episodic interviews, semantic verdicts, and memory updates via debunking. The graph does real work: planning interviews and proving the verdict. | The generic guard-captain task handoff; procedural memory |
 | Oct 16 | **Minds are private:** the investigator sees only the social structure and must interview to learn beliefs | Makes "agents really remember" provable instead of an omniscient query | Letting the investigator read all beliefs directly |
 | Oct 16 | **Include debunking:** published verdicts mark debunked beliefs `superseded` (never deleted), and trust in the originator drops | The "a new agent can come and fix everything" story | Stopping at the verdict |
+| Oct 16 | **Village: Chandanpur, 8 villagers with Indian names** ([me] asked for Indian names) | Two circles (market: Ramesh, Chotu, Lakshmi, Sarla; temple/school: Pandit Shastri, Meera, Balwant) joined by Gopal the milkman, which gives the bridge and hub structure for the investigator's briefing | AI Town's default 5 characters |
 
 ---
 
@@ -682,6 +683,65 @@ These are the first changes to `world/` since the pristine import (`2ddae25`): 7
 - **Tests:** 8-thread first-call race on a new world, plus a concurrent-creator tolerance test. 63 pass.
 
 **Note:** Convex logged `engineNotRunning` errors at 16:08 for engine `ks737…`. Those are leftovers from the wiped world's scheduled steps and unrelated.
+
+**✅ 3.2 The village of Chandanpur** [AI]
+
+**The village:**
+- **`world/data/characters.ts`:** 8 villagers on sprites f1–f8, each with a role identity and a plan. All identities end with the **village roster** ("When you talk about people, talk about them").
+
+  | Villager | Role | Gullibility |
+  |---|---|---|
+  | Ramesh | blacksmith | 0.5 |
+  | Chotu | apprentice | 0.9 |
+  | Lakshmi | chai stall | 0.8 |
+  | Sarla | tailor | 0.75 |
+  | Gopal | milkman (the bridge) | 0.7 |
+  | Pandit Shastri | priest | 0.4 |
+  | Meera | teacher | 0.35 |
+  | Balwant | constable | 0.3 |
+
+- **`village/chandanpur.json`:** gullibility plus 24 directed trust links. Name-keyed, and the single source of truth for personalities.
+- **New `POST /worlds/{id}/relationships`:** directed `KNOWS` trust. Re-seeding updates trust but keeps the interaction count, and unknown ids are skipped and reported. 3 tests.
+- **New `scripts/seed_village.py`:** reads Convex `world:defaultWorldStatus` and `world:gameDescriptions`, maps names to AI Town player ids, and posts characters and trust.
+- **Reset recipe:** `npx convex run testing:wipeAllTables`, then `npx convex dev --once`, then `npx convex run init`, then `uv run python scripts/seed_village.py`.
+
+**Graph algorithms on the seeded village:**
+- **Betweenness:** Gopal **24** (the bridge, as designed), then Lakshmi 13. **PageRank** on `KNOWS`: Lakshmi and Gopal 0.16.
+- ❌ **`algo.labelPropagation` is unusable here.** At maxIterations 1–20 it returns the same pairs, including **unconnected** ones (Ramesh+Sarla, Gopal+Meera). That's likely the oscillation of synchronous label propagation, plus tie-breaking.
+- **Plan for 4.1 circles:** remove the top bridge, then run `algo.WCC`. Consider reporting upstream.
+
+**Live run 1** (world `m1748…`, no roster):
+- In character ("Pandit ji", "Namaste Sarla!"), and Balwant spontaneously investigated a metalwork theft.
+- **Problems:**
+  1. **Trivial claims** ("Lakshmi heard fascinating tales", valence 0.0).
+  2. NPCs **invented outsiders** (Ramu Patel, Deepa ji), and those claims were dropped as unknown subjects.
+  3. **❌ Provenance bug:** `Ramesh:self<-Balwant`. Ramesh said it first and later also heard it from Balwant, so explain would credit Balwant.
+  4. My reporting query double-counted rows, which looked like duplicate claims. Not a real bug.
+
+**Fixes:**
+- **Explain paths relay only through `heard` beliefs and stop at the first `self`/`witnessed` belief.** Later edges are corroboration, not origin. Uses `all(x IN nodes(p)[0..size(nodes(p))-1] WHERE x.origin = 'heard')`. Regression test added.
+- **`MIN_ABS_VALENCE = 0.15`:** neutral claims are dropped as "neutral, not gossip". Recall would never surface them anyway.
+- **Honorific-aware names:** `_resolve_person` ignores ji / bhai / didi / sahib / singh and so on, and matches only when unambiguous. "Balwant Singh" → Balwant; "Shastri ji" and "Pandit ji" → Pandit Shastri; "Ramu Patel" → none. `_names_person` accepts any word of the name. Test added.
+- **Roster** in every identity.
+
+**Service hang:**
+- ❌ While AI Town was connected, a code edit triggered `--reload`, and uvicorn waited forever: "Waiting for connections to close" (AI Town's kept-alive connections). The seed script timed out.
+- **Fix:** new `scripts/run_memory.sh` with `--timeout-graceful-shutdown 5`.
+
+**Live run 2** (world `m171vdd5drtp1tf26ktcjee3xn8gcs5q`, with the roster):
+- 4 conversations ingested, 7 posts, **0 errors**.
+- **Gossip is about real villagers now:**
+  - "someone spotted lurking near Ramesh's forge late at night": Lakshmi → Balwant
+  - "a stranger asking about Gopal's milk delivery routes": Sarla → Ramesh
+  - "Ramesh said Chotu's work was broken into"
+- **Remaining quality notes:**
+  - some claim texts stay first-person ("I also overheard Sarla…")
+  - reported speech sometimes makes the reporter the subject
+  - valence is occasionally harsh (−1.0 for a scolding)
+
+  Acceptable for now.
+
+**Tests:** 68 pass.
 
 ---
 
