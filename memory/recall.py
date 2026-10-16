@@ -8,6 +8,11 @@ from memory import db
 
 # Gossip ranking: confidence x |valence| x relevance, damped when the two already exchanged this claim.
 ALREADY_SHARED_DAMPING = 0.2
+# The topic goes into the NPC's prompt; it comes from NPC-made claims, so keep it short and plain.
+TOPIC_MAX_CHARS = 200
+# Topic choice looks further than the k memories shown, and favours first-hand news.
+TOPIC_CANDIDATES = 10
+WITNESSED_TOPIC_BOOST = 1.5
 
 CHARACTERS = "MATCH (c:Character) WHERE c.id IN [$me, $other] RETURN c.id, c.name"
 
@@ -58,13 +63,15 @@ def recall(world_id: str, me: str, other: str, k: int = 5, episodes: int = 3) ->
         return _empty(me, other)
     other_name = names.get(other, "them")
 
-    beliefs = [
+    candidates = [
         {"claim": cid, "subject": sid, "subject_name": sname, "text": text, "valence": valence,
          "confidence": round(conf, 3), "origin": origin, "told_by": told_by,
          "about_other": sid == other, "already_shared": shared, "score": round(score, 3)}
         for cid, sid, sname, text, valence, conf, origin, told_by, shared, score in g.ro_query(
-            BELIEFS, {"me": me, "other": other, "k": k, "damping": ALREADY_SHARED_DAMPING}).result_set
+            BELIEFS, {"me": me, "other": other, "k": max(k, TOPIC_CANDIDATES),
+                      "damping": ALREADY_SHARED_DAMPING}).result_set
     ]
+    beliefs = candidates[:k]
     rep_score, evidence = g.ro_query(REPUTATION, {"me": me, "other": other}).result_set[0]
     trust_rows = g.ro_query(TRUST, {"me": me, "other": other}).result_set
     eps = [{"conversation": cid, "summary": summary, "ended_at": ended}
@@ -78,7 +85,30 @@ def recall(world_id: str, me: str, other: str, k: int = 5, episodes: int = 3) ->
         "episodes": eps,
     }
     result["memories"] = describe(result, names[me], other_name)
+    result["topic"] = topic(candidates, names[me])
     return result
+
+
+def topic(candidates: list[dict], my_name: str) -> str | None:
+    """The one piece of news the graph wants this NPC to open with, in its own words. The small dialogue model
+    only has to voice it (step 3.4: with memories alone it never passed on the theft; with a topic it mostly did).
+
+    Gossip is news about third parties: claims about the listener are used only if there's nothing else
+    (telling Chotu a rumor about Chotu is a confrontation, not gossip). First-hand news ranks higher."""
+    fresh = [b for b in candidates if not b["already_shared"] and b["score"] > 0]
+    pool = [b for b in fresh if not b["about_other"]] or fresh
+    if not pool:
+        return None
+    b = max(pool, key=lambda b: b["confidence"] * abs(b["valence"])
+            * (WITNESSED_TOPIC_BOOST if b["origin"] == "witnessed" else 1.0))
+    text = _as_me(b["text"], my_name).rstrip(".")
+    if b["origin"] == "witnessed":
+        line = f"I saw it with my own eyes: {text}."
+    elif b["origin"] == "heard":
+        line = f"{_names(b['told_by'])} told me that {_lower_first(text)}."
+    else:
+        line = f"{text}."
+    return " ".join(line.replace('"', "'").split())[:TOPIC_MAX_CHARS]
 
 
 def describe(r: dict, my_name: str, other_name: str) -> list[str]:
@@ -112,7 +142,7 @@ def describe(r: dict, my_name: str, other_name: str) -> list[str]:
 
 def _empty(me: str, other: str) -> dict:
     return {"me": me, "other": other, "known": False, "beliefs": [], "reputation": {"score": 0.0, "evidence": 0},
-            "trust": None, "episodes": [], "memories": []}
+            "trust": None, "episodes": [], "memories": [], "topic": None}
 
 
 def _confidence_words(c: float) -> str:

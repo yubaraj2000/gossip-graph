@@ -17,6 +17,8 @@ export type Recalled = {
   memories: { description: string }[];
   // Summary of this pair's most recent finished conversation, if any.
   lastConversationSummary: string | null;
+  // The news the graph wants this NPC to open with, in its own words (best-ranked, not yet shared with them).
+  topic: string | null;
 };
 
 function serviceUrl(): string {
@@ -80,10 +82,11 @@ export async function recallMemories(
     return {
       memories: (recalled.memories as string[]).map((description) => ({ description })),
       lastConversationSummary: recalled.episodes[0]?.summary ?? null,
+      topic: recalled.topic ?? null,
     };
   } catch (e) {
     console.error(`memory service: recall failed for ${playerId} -> ${otherPlayerId}:`, e);
-    return { memories: [], lastConversationSummary: null };
+    return { memories: [], lastConversationSummary: null, topic: null };
   }
 }
 

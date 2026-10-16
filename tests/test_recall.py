@@ -69,3 +69,35 @@ def test_recall_endpoint(gossip):
     assert client.get(f"/worlds/{gossip}/recall", params={"me": "p:4"}).status_code == 422
     assert client.get(f"/worlds/{gossip}/recall", params={"me": "p:4", "other": "p:9", "k": 99}).status_code == 422
     assert client.get("/worlds/bad id/recall", params={"me": "p:1", "other": "p:2"}).status_code == 422
+
+
+def test_topic_is_the_best_fresh_news_in_the_npcs_own_words(gossip):
+    # Mara -> Tom already exchanged both Kai rumors in c:3, so there's nothing fresh to open with
+    assert recall.recall(gossip, "p:3", "p:4")["topic"] is None
+    # Mara -> Kai himself: her own "fence" twist (0.6 x 1.0 x 2) outranks the theft she heard (0.432 x 1.0 x 2)
+    assert recall.recall(gossip, "p:3", "p:9")["topic"] == "Kai was spotted trying to fence a stolen hammer."
+    # Pip -> Tom: Pip heard the theft from Bram, and Tom never heard it from Pip
+    assert recall.recall(gossip, "p:2", "p:4")["topic"] == "Bram told me that Kai stole a silver hammer from Bram."
+    # Bram's own claim, in first person
+    assert recall.recall(gossip, "p:1", "p:4")["topic"] == "Kai stole a silver hammer from me."
+
+
+def test_topic_for_an_eyewitness(village):
+    from tests.helpers import seed_witnessed_theft
+    world_id, _, _ = village
+    seed_witnessed_theft(world_id)
+    assert recall.recall(world_id, "p:1", "p:2")["topic"] == \
+        "I saw it with my own eyes: Kai stole a silver hammer from me."
+
+
+def test_topic_prefers_news_about_others_and_first_hand_news(village):
+    from memory import ingest
+    from tests.helpers import seed_witnessed_theft, two_way
+    world_id, scripted, _ = village
+    seed_witnessed_theft(world_id)  # Bram saw Kai steal his hammer
+    scripted["c:1"] = [{"message_index": 0, "subject": "Pip", "predicate": "is", "object": "",
+                        "text": "Pip is lazy at the forge", "valence": -0.5}]
+    ingest.ingest_conversation(world_id, two_way("c:1", "p:3", "p:1", "Bram, your Pip is lazy at the forge."))
+    r = recall.recall(world_id, "p:1", "p:2")  # Bram about to talk to Pip
+    assert any(b["about_other"] for b in r["beliefs"])  # Bram does remember the rumor about Pip...
+    assert r["topic"] == "I saw it with my own eyes: Kai stole a silver hammer from me."  # ...but opens with the theft
