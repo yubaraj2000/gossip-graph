@@ -52,7 +52,8 @@ graph LR
 | `Event` | `id`, `kind`, `description`, `ts`, `severity` (0–1) | **episodic** (ground truth) | narrator endpoint |
 | `Claim` | `id`, `key` (`subject\|predicate\|object`), `predicate`, `text`, `valence` (−1 to +1), `embedding` (1024-d) | **semantic** (the proposition) | ingest or narrator |
 | `Belief` | `holder` (character id), `claim` (claim id), `confidence` (0–1), `origin` (`witnessed`, `heard` or `self`), `status` (`active` or `superseded`), `created_at`, `valid_to` | **semantic** (one character's stance) | ingest or narrator |
-| `Task` *(Phase 4.4)* | `id`, `description`, `status` | **shared state / handoff** | NPC coordination |
+| `Case` | `id`, `title`, `question`, `status` (`open` or `solved`), `opened_at`, `briefing` (JSON) | **shared state / handoff**: the case file | `POST /worlds/{id}/cases` |
+| `Lead` | `case`, `target`, `kind` (`hub`, `bridge`, `circle`, …), `reason`, `priority`, `status` (`open`, `done` or `dropped`) | **shared state**: who to interview, and why | case briefing; later interviews |
 | `Rule` *(Phase 4.5, stretch)* | `id`, `condition`, `action`, `strength` | **procedural** | learned from events |
 
 `Belief.holder` and `Belief.claim` repeat information that the relationships already hold. This makes `MERGE` idempotent and lookups indexed: there is exactly one belief per (holder, claim).
@@ -62,6 +63,9 @@ graph LR
 | Type | From → To | Meaning |
 |---|---|---|
 | `KNOWS {trust, interactions}` | Character → Character | Social graph, directed: A's trust in B. Seeded, then updated after each conversation. |
+| `FRIEND` | Character → Character | The village's lasting friendships (seeded only). `KNOWS` also grows with every first conversation and soon links almost everyone, so the briefing reads circles and bridges from `FRIEND`. |
+| `INVESTIGATES {since, active}` | Character → Case | Who is (or was) on the case. A replacement makes the previous investigator inactive. |
+| `HAS_LEAD` / `TARGET` | Case → Lead → Character | The case's interview list |
 | `LEARNED_FROM {count}` | Character → Character | Rolled-up "who learned things from whom". Used for influence ranking. |
 | `PARTICIPATED_IN` | Character → Conversation | Who was in the conversation |
 | `SAID` / `IN` | Character → Message → Conversation | The transcript |

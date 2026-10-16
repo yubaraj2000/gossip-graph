@@ -91,7 +91,7 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
 
 **Rule — minds are private.** The investigator may query the *social structure* (`KNOWS`, `LEARNED_FROM`, who talked to whom) but never other characters' beliefs. It learns beliefs only through interviews, which is what makes "the NPCs really remember" provable.
 
-- [ ] **4.1 Case file in the graph:** `Case`, leads, interviews and findings, written after every step so a replacement can resume. Plus a **briefing**, our version of Graphify's `GRAPH_REPORT.md`, computed from public structure:
+- [x] **4.1 Case file in the graph:** `Case`, leads, interviews and findings, written after every step so a replacement can resume. Plus a **briefing**, our version of Graphify's `GRAPH_REPORT.md`, computed from public structure:
   - gossip hubs (PageRank on `LEARNED_FROM`)
   - bridges (betweenness)
   - cliques (label propagation)

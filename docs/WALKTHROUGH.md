@@ -206,3 +206,31 @@ nobody waits.
 **What did you build vs. reuse?**
 AI Town (MIT) provides the pixel world and NPC dialogue. The memory system — graph model, ingest, recall,
 explain, failure handling — is ours, written during the event (see git history and `RESEARCH_LOG.md`).
+
+---
+
+# Phase 3 — plugging the memory into the game
+
+**Two connections only.** Before an NPC speaks, AI Town calls `GET /recall` and gets memory lines plus one
+**topic** (the best fresh news, in the NPC's own words). After a conversation ends, AI Town sends the transcript
+to `POST /conversations`. AI Town's own vector memory (tables, embeddings, reflections) was deleted, so without
+FalkorDB the villagers remember nothing.
+
+**The village of Chandanpur.** Eight villagers with a personality (gullibility) and trust links
+(`village/chandanpur.json`): a market circle (Ramesh, Chotu, Lakshmi, Sarla) and a temple/school circle
+(Pandit Shastri, Meera, Balwant), joined by Gopal the milkman — the top bridge by betweenness (24).
+
+**The narrator** (`POST /events`) records what really happened: "Kabir stole Ramesh's hammer; Ramesh saw it."
+Ramesh gets a 100% witnessed belief; rumors about it — before or after — attach to the same claim and become
+verifiable.
+
+**The graph picks the topic.** With memories alone, the small model never retold the theft (0/5 replays).
+Recall now hands it one fresh piece of news to voice, preferring news about other people and first-hand news.
+*The graph decides what to say; the AI only says it.*
+
+**Live result.** Ramesh (saw it, 100%) → Gopal (70%) → Pandit Shastri (42%): from the market circle to the
+temple circle through the predicted bridge. Pandit Shastri: *"Gopal told me. Gopal heard it from Ramesh.
+Ramesh saw it happen."*
+
+**Fixed along the way:** a setup race when two NPCs report at once; "who told you" crediting a later source
+instead of the originator; honorifics ("Shastri ji", "Balwant Singh"); a service freeze on reload.

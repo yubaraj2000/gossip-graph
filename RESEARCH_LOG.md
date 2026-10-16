@@ -836,6 +836,50 @@ Possible later extraction filters, and good material for the investigator.
 
 **Phase 3 is complete** (3.1–3.4). Next: the Phase 3 review checkpoint with [me], then Phase 4 (the investigator).
 
+### Oct 16 — Phase 3 review checkpoint
+
+**✅ Done** [AI]+[me]. A plain-language recap was given in chat and added to `docs/WALKTHROUGH.md` as a Phase 3 section:
+- the two connections
+- the village
+- the narrator
+- the graph choosing the topic
+- the live cross-circle spread
+- the bugs found
+
+### Oct 16–17 — Phase 4: the Investigator
+
+**✅ 4.1 Case file and briefing** [AI]
+
+**Files:** `memory/cases.py`, plus `POST /worlds/{id}/cases` and `GET /worlds/{id}/cases/{case}`.
+- **Case file in the graph:**
+  - `Case {title, question, status, briefing}`
+  - `(investigator)-[:INVESTIGATES {since, active}]->(Case)`. Assigning a new investigator deactivates the old one.
+  - `(Case)-[:HAS_LEAD]->(Lead {kind, reason, priority, status})-[:TARGET]->(Character)`
+  - The briefing is computed **once** and stored, so every investigator on the case reads the same one.
+- **Briefing, Graphify-style** (its report covers god nodes, communities and suggested questions), **from structure only, no beliefs:**
+  - news hubs: PageRank on `LEARNED_FROM` (falls back to `KNOWS`/trust before any gossip)
+  - bridges: betweenness
+  - circles: connected groups after removing the top bridge, because label propagation was unusable (3.2)
+  - suggested leads: top hub, top bridge, and one voice per circle, each with a plain-English reason and summary lines
+  - investigators and outsiders are excluded
+- **Tests:** 84 pass. `tests/test_cases.py` has 6 cases on the real `chandanpur.json` structure:
+  - bridge = Gopal, two circles
+  - hubs switch to news flow once gossip exists
+  - the case file is shared and written once across investigators
+  - investigators don't distort the structure
+  - circles survive a fully dense `KNOWS`
+  - 404
+
+**❌ → ✅ Live finding: social structure densifies.** The first live briefing said "Chotu bridges", with one circle of 7.
+- **Cause:** after hours of talk, `KNOWS` (created on every first conversation) had 52 edges against 24 seeded, so the designed circles dissolved.
+- **Fix:** seeding also writes `FRIEND` edges (the lasting friendships). Circles and bridges are read from `FRIEND`, and hubs from live `LEARNED_FROM` news flow. Reseeded the live world (idempotent) and reopened the case.
+
+**Live briefing** (case `case_hammer`, Inspector Vikram):
+- "Most news comes from Gopal and Pandit Shastri"
+- "Gopal bridges the village's circles; Lakshmi is the next-strongest link"
+- circles: {Ramesh, Sarla, Chotu, Lakshmi} and {Meera, Balwant, Pandit Shastri}
+- **leads:** Gopal (hub), Lakshmi (circle voice), Pandit Shastri (circle voice)
+
 ---
 
 ## Open questions
