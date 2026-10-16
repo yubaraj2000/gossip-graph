@@ -524,6 +524,42 @@ One expectation of mine had a rounding error (0.26 vs 0.259). I fixed the test, 
 - **Tom→Kai:** "I don't really know Kai yet. / My impression of Kai is bad. / Mara told me … (it's only a rumor to me)."
 - **Latency:** 200 HTTP calls, **2.2 ms median**, 2.4 ms p95.
 
+**✅ 2.5 Explain: `GET /worlds/{id}/explain?holder=&claim=&subject=`** [AI]
+
+**Files:** `memory/explain.py`. For each of the holder's beliefs it returns:
+- every `HEARD_FROM` path to a root (Q4), capped at 5 per belief
+- each step's holder, confidence, `heard_from` name, and **the exact line heard** (the `EVIDENCE` message said by the next person)
+- the root origin and event
+- `grounded` (the claim `REFERS_TO` an event)
+- `verdict`: `witnessed` or `unverified`
+- an answer `sentence`
+
+**The sentence is built from the graph path, never by the LLM.** The preview showed 3B garbling the chain. Names are repeated instead of using pronouns, since characters have no recorded pronouns.
+
+| Case | Sentence |
+|---|---|
+| Chain | "Mara told me. Mara heard it from Pip, who heard it from Bram. Bram started it, and nobody saw it happen." |
+| Witnessed | "Pip told me. Pip heard it from Bram. Bram saw it happen." |
+| Extra direct source | "… I also heard it from Mara." |
+| Holder is the root | "I saw it myself." / "Nobody told me; I said it first." |
+
+- First sentence draft: "Mara told me, who said it first." It read badly, so it was reworked before the tests.
+- Test fixture `gossip` moved into `conftest.py`, with its constants in `tests/helpers.py`, and shared by the recall and explain tests.
+
+**Tests:** 60 pass, all on the first run. `tests/test_explain.py` has 7 cases:
+- the full chain with the lines heard
+- the mutated rumor traced to Mara
+- a second source as a second path (the shortest path comes first)
+- **a witnessed event grounds the chain** (seeded the way the 3.3 narrator will): Bram's belief stays `witnessed` at 1.0 through ingest, so Mara is at 0.72
+- the originator
+- filters and unknowns
+- the endpoint
+
+**Live on `demo`:**
+- Tom on the theft: *"Mara told me. Mara heard it from Pip, who heard it from Bram. Bram started it, and nobody saw it happen."*
+- Mara on the fence rumor: *"Nobody told me; I said it first."* Correct: Mara invented the "fence" twist.
+- **Latency:** 200 HTTP calls, **2.0 ms median**, 2.5 ms p95.
+
 ---
 
 ## Open questions

@@ -160,7 +160,7 @@ MATCH (:Character {id:$me})-[:PARTICIPATED_IN]->(cv:Conversation)<-[:PARTICIPATE
 RETURN cv.id, cv.summary ORDER BY cv.ended_at DESC LIMIT 3
 ```
 
-**Q4 — Explain: "who told you that?"** Returns every provenance path.
+**Q4 — Explain: "who told you that?"** Returns every provenance path. Served by `GET /worlds/{id}/explain?holder=&claim=&subject=`. It adds the line heard at each hop (the listener's `EVIDENCE` message, said by the next person in the chain), plus an answer sentence built **from the path, not by the LLM**, e.g. *"Mara told me. Mara heard it from Pip, who heard it from Bram. Bram saw it happen."* The verdict is `witnessed` if any path's root `SAW` an event; otherwise `unverified`.
 ```cypher
 MATCH (:Character {id:$holder})<-[:HELD_BY]-(b:Belief)-[:OF]->(:Claim {id:$claim})
 MATCH p = (b)-[:HEARD_FROM*0..8]->(root:Belief)
