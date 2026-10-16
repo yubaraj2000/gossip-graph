@@ -37,8 +37,8 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 - [x] Prove the gossip, provenance and reputation queries work (NPC prototype)
 - [x] Ollama on the Ubuntu box: benchmarked and reachable through an SSH tunnel
 - [x] Record book (`RESEARCH_LOG.md`)
-- [ ] **0.1** [me] Set your git identity, run `git init`, and make the first commits (Claude provides the commands and messages). Commit timestamps prove the work was done during the event (rule 8).
-- [ ] **0.2** [me] Create an empty **public** GitHub repo, add the Mac's SSH key to your GitHub account, and push.
+- [x] **0.1** [me] Set your git identity, run `git init`, and make the first commits (Claude provides the commands and messages). Commit timestamps prove the work was done during the event (rule 8).
+- [x] **0.2** [me] Create an empty **public** GitHub repo, add the Mac's SSH key to your GitHub account, and push.
 
 **Done when:** the repo is on GitHub with the current files.
 
@@ -46,11 +46,11 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 
 ## Phase 1 — Feasibility test: AI Town (timebox: 2 hours)
 
-- [ ] **1.1** Copy AI Town into the project as `world/`, with credit and its MIT license kept.
-- [ ] **1.2** Start AI Town's self-hosted Convex backend in Docker on the Mac, and generate its admin key.
-- [ ] **1.3** Open a persistent SSH tunnel to Ubuntu's Ollama on port 11435, and check that Convex can reach it from inside Docker.
-- [ ] **1.4** Run the town with `llama3.2:3b` and `nomic-embed-text`, and watch NPCs talk to each other.
-- [ ] **1.5** Measure how fast the NPCs chat, and how much memory the Mac uses.
+- [x] **1.1** Copy AI Town into the project as `world/`, with credit and its MIT license kept.
+- [x] **1.2** Start AI Town's self-hosted Convex backend in Docker on the Mac, and generate its admin key.
+- [x] **1.3** Open a persistent SSH tunnel to Ubuntu's Ollama on port 11435, and check that Convex can reach it from inside Docker.
+- [x] **1.4** Run the town with `llama3.2:3b` and `nomic-embed-text`, and watch NPCs talk to each other.
+- [x] **1.5** Measure how fast the NPCs chat, and how much memory the Mac uses.
 
 **Go/no-go decision (you decide):**
 - ✅ **Go** if the town runs in the browser and NPCs hold conversations within the 2 hours. Continue to Phase 2.

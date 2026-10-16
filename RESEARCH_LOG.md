@@ -166,7 +166,7 @@ Prompt: a 3-sentence in-character NPC reply.
 
 **✅ SSH tunnel from the Mac works** [AI]
 - `ssh -f -N -L 11435:127.0.0.1:11434 oditek@192.168.29.235` makes `http://127.0.0.1:11435/api/tags` on the Mac list all 3 models.
-- 🔬 Not yet tested from inside a Docker container via `host.docker.internal:11435`; the FalkorDB image has no `curl`. Test this during the AI Town spike.
+- ✅ Tested from inside a Docker container in Phase 1.3: `host.docker.internal:11435` works from the Convex backend container.
 - ⚠️ AI Town's `docker-compose.yml` publishes host port **11434** on its backend container. That would clash with a tunnel on 11434, so use **11435** for the tunnel.
 
 ### Oct 16 — Free LLM API research
@@ -193,6 +193,84 @@ Sources are web articles from Sept–Oct 2026, and they partly conflict.
   - Claude does one step at a time and reports
   - each phase ends with a review checkpoint
 - **Feature freeze:** Oct 18, 14:00 IST. **Target submission:** 21:00 IST.
+
+### Oct 16 — Repo published
+
+**✅ Public repo: https://github.com/yubaraj2000/gossip-graph** [me]
+- Pushed 2 commits on `main`:
+  - `0c821a7` chore: set up FalkorDB and Python
+  - `d2927a5` docs: add research log and plan
+- Both are dated 2026-10-16, about 01:18 IST, so within the event window (rule 8).
+- `reference/` and `.venv/` were correctly left out.
+- The commits deliberately have **no** `Co-Authored-By` trailer; that's the participant's choice for all commits. The AI-assistance disclosure (rule 11) lives in this log and the README instead.
+
+### Oct 16 — Phase 1: AI Town feasibility test (timebox started 01:36 IST, ends 03:36 IST)
+
+**✅ 1.1 Imported AI Town into `world/`** [AI]
+- Unmodified copy of `a16z-infra/ai-town` at commit `8e05997` (2026-08-25), with the upstream `.git/` left out.
+- 16 MB, 209 files. The largest file is `src/editor/tilesets/Modern.png` at 5.4 MB, so nothing near GitHub's limits.
+- The MIT `LICENSE` is kept. `world/UPSTREAM.md` records the source, the commit, and how to diff our changes.
+- AI Town's own `world/.gitignore` already excludes `node_modules`, `.env*.local` and `.env`.
+- **Rule for later changes:** commit the import on its own first, so that `git diff <import> -- world/` shows exactly our modifications.
+
+**✅ 1.2 Convex backend running in Docker on the Mac** [AI]
+- `docker compose up -d backend dashboard` in `world/`.
+- **Frontend container skipped:** its Dockerfile builds Ubuntu, nvm and Node 18. That's slow and heavy, so we run Vite on the host instead.
+- `npm install` on the host (Node 24): 749 packages in 15 s.
+  - ⚠️ npm skipped the `esbuild` install scripts (new `allowScripts` policy). Harmless: Vite starts fine.
+- Admin key generated with `generate_admin_key.sh` and stored in `world/.env.local` (mode 600, gitignored by `world/.gitignore`), together with `CONVEX_SELF_HOSTED_URL` and `VITE_CONVEX_URL`.
+- ⚠️ AI Town's compose file publishes 3210, 3211, 6791 and 11434 on `0.0.0.0`, so they're visible on the LAN. Fine for the test; restrict to `127.0.0.1` when we modify `world/`.
+
+**✅ 1.3 Ollama tunnel, reachable from inside Docker** [AI]
+- New `scripts/ollama-tunnel.sh` (`start`, `stop`, `status`): SSH `-L 127.0.0.1:11435 → ubuntu:11434`, with keep-alives.
+- From the backend container, `curl http://host.docker.internal:11435/api/version` returns `0.30.10` ✅.
+- **Embedding gotcha:** AI Town's Ollama default is `mxbai-embed-large` (1024 dimensions, set in `convex/util/llm.ts`), not `nomic-embed-text` (768). We pulled `mxbai-embed-large` on Ubuntu (669 MB) instead of changing upstream code.
+- Convex env:
+  - `OLLAMA_HOST=http://host.docker.internal:11435`
+  - `OLLAMA_MODEL=llama3.2:3b`
+  - `OLLAMA_EMBEDDING_MODEL=mxbai-embed-large`
+
+**✅ 1.4 Town runs, and NPCs talk** [AI]
+- `npx convex dev --until-success --run init --codegen disable` deployed the functions and created the default world.
+  - `--codegen disable` keeps `convex/_generated/` identical to upstream.
+  - `diff -rq world/ reference/ai-town/` shows **no upstream file changed**.
+- Vite serves `http://127.0.0.1:5173/ai-town`. It renders in Chrome (`127.0.0.1` is allowed; `localhost:3000` was blocked earlier).
+- **Idle worlds:** AI Town stops a world after 5 minutes without a heartbeat (`IDLE_WORLD_TIMEOUT`). An open browser tab sends heartbeats. For headless runs, call `npx convex run world:heartbeatWorld '{"worldId": ...}'` every minute.
+- Within about 3 minutes the NPCs (`p:0` Lucky and `p:6`) exchanged 10+ messages via `llama3.2:3b` on Ubuntu. The content is the default characters' whimsy (space cheese), to be replaced in Phase 3.
+- ⚠️ `npx convex logs --history N` **streams forever**. Run it in the background and kill it, or use `npx convex data <table>` for snapshots.
+
+**✅ 1.5 Measured (8 minutes of real activity, 01:48–01:56)** [AI]
+
+| Metric | Result |
+|---|---|
+| NPC reply gap (`llama3.2:3b` on the Ubuntu CPU, about 40 words per message) | **median 8 s** (min 6 s, max 11 s), over 18 replies |
+| Conversations | 2, with 10 messages each, about 70–80 s per conversation |
+| AI Town memories (summary plus `mxbai-embed-large` embedding) | 3 created within about 20 s of each conversation ending, so the embedding path works |
+| Convex backend RAM | about 540–550 MiB |
+| FalkorDB RAM | about 71 MiB |
+| Mac free memory | 51–52% (M5, 16 GB): plenty of headroom |
+
+**❌ Found: the Mac's idle sleep kills the whole stack** [AI]
+- The Mac sleeps after **1 minute** idle on battery (`pmset sleep 1`, display after 2 minutes).
+- `pmset -g log` shows `Idle Sleep` at **01:56:05**, the exact second the NPC messages stopped.
+- After that it only woke in dark-wake bursts, which explains the heartbeat gaps (01:55 → 02:36 → 02:52 → …).
+- The SSH tunnel died during sleep, so `ollama-tunnel.sh status` showed it unreachable at 04:33. Restarted ✅.
+- **Fix for working sessions:**
+  - run `caffeinate -dimsu` while the stack runs (a temporary hold, no system setting changed)
+  - stay on mains power
+  - TODO: make `ollama-tunnel.sh` reconnect automatically
+
+**⚠️ Timebox:** 01:36–03:36 by the clock, but the active work for 1.1–1.5 took **about 20 minutes**. The rest was the Mac asleep.
+
+**Feasibility verdict: everything needed works.**
+- Self-hosted Convex in Docker ✅
+- Vite frontend ✅
+- Ollama on Ubuntu via the tunnel, including from inside Docker ✅
+- NPC conversations ✅
+- AI Town's memory pipeline ✅
+- `world/` still identical to upstream ✅
+
+Go/no-go is the participant's call [me].
 
 ---
 
