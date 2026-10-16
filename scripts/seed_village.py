@@ -33,6 +33,9 @@ def main(village_file: Path) -> None:
 
     characters = [{"id": players[c["name"]], "name": c["name"], "kind": "npc", "gullibility": c["gullibility"]}
                   for c in village["characters"]]
+    # Outsiders aren't AI Town NPCs: they keep the fixed id from the village file.
+    characters += [{"id": o["id"], "name": o["name"], "kind": o["kind"], "identity": o["identity"],
+                    "gullibility": o["gullibility"]} for o in village.get("outsiders", [])]
     relationships = [{"source": players[r["from"]], "target": players[r["to"]], "trust": r["trust"]}
                      for r in village["relationships"]]
     with httpx.Client(base_url=MEMORY_SERVICE, timeout=30) as http:
@@ -43,6 +46,8 @@ def main(village_file: Path) -> None:
           f"({result['skipped_unknown_characters']} skipped) from {village_file.name}")
     for c in village["characters"]:
         print(f"  {players[c['name']]:>5}  {c['name']:<15} {c['role']:<18} gullibility {c['gullibility']}")
+    for o in village.get("outsiders", []):
+        print(f"  {o['id']:>5}  {o['name']:<15} {o['role']:<18} gullibility {o['gullibility']}  (outsider)")
 
 
 if __name__ == "__main__":
