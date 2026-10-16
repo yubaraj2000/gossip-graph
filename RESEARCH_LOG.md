@@ -481,6 +481,49 @@ Harmless warning: Starlette's test client says `httpx` is deprecated in favor of
 - **FalkorDB gotcha:** `count{(c)<-[:IN]-(:Message)}` (a COUNT subquery) is not supported (`Invalid input '('`). Use `OPTIONAL MATCH` + `count()`.
 - **Assumption, documented in `app.py`:** a single service process, because startup recovery treats every `ingesting` as interrupted.
 
+**✅ 2.4 Recall: `GET /worlds/{id}/recall?me=&other=&k=&episodes=`** [AI]
+
+**Files and behavior:**
+- `memory/recall.py`: pure Cypher, no LLM. It returns:
+  - ranked beliefs (Q2)
+  - reputation (Q5)
+  - `KNOWS` trust
+  - recent episodes (Q3)
+  - `memories`: first-person lines for the NPC prompt
+- **New idea, beyond the data-model doc: "already shared".** If my belief and the listener's are linked by `HEARD_FROM` in either direction, we've already exchanged that rumor, so its score is ×0.2. The NPC knows this because it was in that conversation.
+- **Memory lines use words, not numbers:**
+  - confidence: "I'm sure of it" / "I believe it" / "I'm not certain" / "it's only a rumor to me"
+  - trust: "trust" / "somewhat trust" / "don't fully trust"
+  - reputation: "very bad" … "very good"
+  - first person: "from Bram" becomes "from me" and "Bram's" becomes "my" in Bram's own memory, but not when Bram is the subject. The word boundary leaves "Brambles" alone.
+
+**❌ → ✅ Bug: `already_shared` was always false.**
+- Debugged clause by clause. Each `OPTIONAL MATCH` works on its own, and after a plain `WITH b`.
+- The failing shape: `MATCH … OPTIONAL MATCH (kk…) WITH b,c,s, count(kk) … OPTIONAL MATCH (b)-[sh:HEARD_FROM]-(…)` returns `count(sh) = 0`.
+- **FalkorDB 6.0.2 quirk:** an OPTIONAL MATCH placed after an earlier OPTIONAL MATCH plus an aggregating WITH silently matches nothing. A minimal single-MATCH repro did **not** trigger it, so it needs the multi-clause shape.
+- **Fix:** put all OPTIONAL MATCHes before one aggregating WITH. Verified: Pip→Bram and Mara→Tom are now shared; Tom→Kai is not.
+- 💡 Consider reporting this upstream to FalkorDB with the demo graph.
+
+**❌ Test-harness slip:** zsh doesn't word-split `$pair`, so the first curl loop sent malformed URLs. It wasn't a service bug; I redid the checks in Python.
+
+**Tests:** 53 pass. `tests/test_recall.py` has 8 cases:
+- damping for already-shared claims
+- fresh gossip not marked shared
+- about-the-listener first, with reputation
+- `k` limit and ordering
+- episodes and trust
+- first-person lines
+- unknown characters and worlds
+- the endpoint (422 on bad `k`, a missing param, or a bad world)
+
+One expectation of mine had a rounding error (0.26 vs 0.259). I fixed the test, not the code.
+
+**Live on the `demo` world:**
+- **Pip→Bram:** "Bram told me that Kai stole a silver hammer from Bram (I believe it). Bram and I already talked about this."
+- **Bram→Pip:** "I've been saying that Kai stole a silver hammer from me …"
+- **Tom→Kai:** "I don't really know Kai yet. / My impression of Kai is bad. / Mara told me … (it's only a rumor to me)."
+- **Latency:** 200 HTTP calls, **2.2 ms median**, 2.4 ms p95.
+
 ---
 
 ## Open questions

@@ -132,19 +132,27 @@ MERGE (lis)-[l:LEARNED_FROM]->(spk) ON CREATE SET l.count = 1 ON MATCH SET l.cou
 ```
 Test result: Bram → Pip gave 0.90, Pip → Mara 0.72, Mara → Tom 0.43. A second source, Bram → Tom directly, raised Tom's belief to **0.60**.
 
-**Q2 — Recall: what I bring up when talking to someone.** This replaces AI Town's vector `searchMemories`.
+**Q2 — Recall: what I bring up when talking to someone.** This replaces AI Town's vector `searchMemories`. Served by `GET /worlds/{id}/recall?me=&other=&k=`.
 ```cypher
 MATCH (me:Character {id:$me})<-[:HELD_BY]-(b:Belief {status:'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
-OPTIONAL MATCH (:Character {id:$other})-[kk:KNOWS]->(s)
-OPTIONAL MATCH (b)-[:HEARD_FROM]->(:Belief)-[:HELD_BY]->(t:Character)
-WITH b, c, s, count(kk) > 0 AS other_knows, collect(DISTINCT t.name) AS told_by
-WITH b, c, s, told_by,
+OPTIONAL MATCH (b)-[sh:HEARD_FROM]-(:Belief {holder:$other})        // we already exchanged this one
+OPTIONAL MATCH (:Character {id:$other})-[kk:KNOWS]->(s)              // they know the subject
+OPTIONAL MATCH (b)-[:HEARD_FROM]->(:Belief)-[:HELD_BY]->(t:Character)  // who told me
+WITH b, c, s, count(DISTINCT sh) > 0 AS already_shared, count(DISTINCT kk) > 0 AS other_knows,
+     collect(DISTINCT t.name) AS told_by
+WITH b, c, s, told_by, already_shared,
      CASE WHEN s.id = $other THEN 2.0 WHEN other_knows THEN 1.5 ELSE 1.0 END AS relevance
-RETURN s.name, c.text, b.confidence, told_by, b.origin,
-       b.confidence * abs(c.valence) * relevance AS score
+RETURN c.text, b.confidence, b.origin, told_by, already_shared,
+       b.confidence * abs(c.valence) * relevance * CASE WHEN already_shared THEN 0.2 ELSE 1.0 END AS score
 ORDER BY score DESC LIMIT $k
 ```
-Ranking is `confidence × |valence| × relevance`. Relevance is 2 if the claim is about the person I'm talking to, 1.5 if it's about someone they know, and 1 otherwise. "Juicy, confident news" therefore rises to the top.
+- **Ranking:** `confidence × |valence| × relevance`. Relevance is 2 if the claim is about the person I'm talking to, 1.5 if it's about someone they know, and 1 otherwise. A claim we **already exchanged** (either direction of `HEARD_FROM`) is damped ×0.2, so NPCs don't repeat themselves.
+- The endpoint also returns:
+  - Q5 reputation
+  - my `KNOWS` trust
+  - Q3 recent episodes
+  - ready-to-use **first-person memory lines** for the NPC prompt. They use words instead of numbers ("I believe it", "it's only a rumor to me"), and my own name becomes "me" / "my".
+- ⚠️ **Keep every `OPTIONAL MATCH` before the aggregating `WITH`.** On FalkorDB 6.0.2, `OPTIONAL MATCH … WITH <aggregation> OPTIONAL MATCH (b)-…` silently matched nothing.
 
 **Q3 — Shared episodes:** past conversations between the two characters.
 ```cypher
