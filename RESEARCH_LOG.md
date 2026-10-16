@@ -921,6 +921,35 @@ Possible later extraction filters, and good material for the investigator.
 
 Then `no_open_leads`. **The eyewitness was reached in interview 3, and every competing rumor was traced to its originator.**
 
+**✅ 4.4 Crash and resume** [AI]
+
+**New pieces:**
+- **`POST /worlds/{id}/cases/{case}/assign`:** hands the case to a new investigator. The old one becomes inactive. The response includes a **handoff summary** built from the case file, with no LLM:
+  - the case and briefing
+  - "Inspector Vikram interviewed Gopal and Lakshmi."
+  - one `Finding:` line per claim (who heard it from whom / saw it / started it)
+  - open leads with their reasons
+  - "Next: interview …"
+- **`scripts/investigate.py "<name>" [--case] [--crash-after N] [--pause S]`:** the investigator agent. It opens or joins a case and interviews until the leads run out. It keeps **nothing** between runs; everything lives in the case file. `--crash-after` simulates a crash with `os._exit(1)`.
+
+**Tests:** 94 pass. `tests/test_handoff.py` has 4 cases:
+- Anjali resumes at Pip, the next lead, after Vikram's 2 interviews. Each villager is interviewed exactly once, and interviews are attributed to Vikram, Vikram, Anjali, Anjali.
+- **The replacement doesn't inherit the old investigator's mind.** Anjali has 0 beliefs after reading the file.
+- Assigning twice is harmless.
+- The endpoint (404).
+
+**Live demo** (case `case_hammer_demo`):
+1. Vikram opens the case, gets the briefing, and interviews Gopal (new leads: Ramesh, Lakshmi), then Lakshmi (new lead: Sarla).
+2. 💥 The process dies (exit 1).
+3. Anjali, a fresh process, reads the handoff: what Vikram did, the findings, and open leads Ramesh / Sarla / Pandit Shastri.
+4. She **interviews Ramesh first** ("I saw it with my own eyes"), then Sarla and Pandit Shastri. **No repeated interviews.**
+
+**Bugs found while building the demo:**
+- **❌ → ✅** `httpx` with base URL `/cases` plus `post("")` added a trailing slash, so FastAPI returned 307. Fixed with explicit paths.
+- **❌ → ✅** Vikram's output vanished when piped: `os._exit` skips flushing stdout. Fixed with `sys.stdout.flush()` before the crash.
+
+**Old junk in live data:** the "Ask Meera…" claim was created before the not-a-statement filter, so it still shows up in old findings.
+
 ---
 
 ## Open questions
