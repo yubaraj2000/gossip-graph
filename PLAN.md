@@ -100,7 +100,7 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
 - [x] **4.4 Crash and resume:** kill investigator #1 mid-case. Investigator #2 (knows nothing) reads the case file and finishes **without re-interviewing**.
 - [x] **4.5 Verdict and debunking:** a report with the evidence chain, e.g. "the theft is witnessed; the 'fence' story was invented by Mara". Publishing it marks believers' copies of debunked claims `superseded` (with `valid_to` and an edge to the verdict; never deleted), and listeners' trust in the rumor's originator drops.
 - [ ] **4.6 Separate villages (light):** one live village plus 1–2 background villages fed by replayed conversations, and an isolation check (Kai is a thief in one, a stranger in another).
-- [ ] **4.7 Stretch:** the investigator walks and talks visibly in AI Town instead of only in the service.
+- [x] **4.7 (kept at [me]'s request: important for the demo):** the investigator walks and talks visibly in AI Town instead of only in the service.
 
 **Dropped for scope:** procedural memory (NPCs learning behavior rules) and the concurrency load test (the robustness tests already cover concurrent ingest).
 

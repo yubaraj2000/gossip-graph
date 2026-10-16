@@ -35,6 +35,7 @@ Newest entries go at the bottom of each section.
 | Oct 16 | **Minds are private:** the investigator sees only the social structure and must interview to learn beliefs | Makes "agents really remember" provable instead of an omniscient query | Letting the investigator read all beliefs directly |
 | Oct 16 | **Include debunking:** published verdicts mark debunked beliefs `superseded` (never deleted), and trust in the originator drops | The "a new agent can come and fix everything" story | Stopping at the verdict |
 | Oct 16 | **Village: Chandanpur, 8 villagers with Indian names** ([me] asked for Indian names) | Two circles (market: Ramesh, Chotu, Lakshmi, Sarla; temple/school: Pandit Shastri, Meera, Balwant) joined by Gopal the milkman, which gives the bridge and hub structure for the investigator's briefing | AI Town's default 5 characters |
+| Oct 17 | **Keep 4.7: investigator walks and talks in AI Town** ([me]: "helpful in demo") | Most visual demo moment; both sides of each interview are posted from the graph, so the screen matches the case file word for word | Skipping it for Phase 5 time |
 
 ---
 
@@ -996,6 +997,52 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - 〰 Ramesh's two garbled Kabir retellings
 - **22 beliefs marked outdated**; trust lowered in Lakshmi and Ramesh.
 - Gopal's recall now says "I don't fully trust Lakshmi… I used to believe that Ramesh stole two valuable iron artifacts from Lakshmi's cart, but Inspector Anjali's inquiry found Lakshmi started it and nobody saw it." His topic switched to the true theft.
+
+**✅ 4.7 The investigator in AI Town** [AI]
+
+**Design:**
+- The investigator is a **human-type player** steered by `scripts/investigate.py --in-town` through the Convex HTTP API.
+- **Both sides of each interview are posted from the case file**, so the screen matches the graph word for word.
+- The villager's own LLM stays quiet in investigator conversations (an earlier replay showed it garbling a witness's account).
+
+**AI Town changes** (`world/`):
+- New `convex/gossipGraph.ts`: `join`, `moveTo`, `invite` (`startConversation`), `say` (a message plus `finishSendingMessage`, as either participant), `leaveConversation`. All require `INVESTIGATOR_SECRET`, which is set in the Convex env and stored in gitignored `world/.env.local`. Investigators join with token `investigator:<name>` (`INVESTIGATOR_TOKEN_PREFIX` in `constants.ts`).
+- `agent.ts`: villagers never invite investigators, and they **stay quiet** while talking with one. They still accept the invite and walk over.
+- `memory.ts`: conversations with an investigator are **not** sent for ingest, since the case endpoint already recorded the interview. It checks `players` and `archivedPlayers` tokens.
+- **Upstream bug found:** a human's `lastInput` was set at join and **never refreshed**, so every human was removed after 5 minutes (`HUMAN_IDLE_TOO_LONG`) regardless of activity. Now `moveTo`, `startConversation` and `finishSendingMessage` refresh it. Side effect, useful for the demo: a "crashed" investigator stands frozen, then disappears after 5 minutes.
+- ❌ → ✅ My regex patch of `agent.ts`'s import produced `, INVESTIGATOR_TOKEN_PREFIX } from` on its own line. esbuild rejected the deploy (nothing broken went live). Fixed by hand.
+- Deploy `--typecheck enable` ✅; AI Town tests 53/53 ✅
+
+**Script** (`scripts/investigate.py --in-town [--character fN] [--line-pause S]`):
+- `Town` client: join (reusing the player if already joined), `meet`, `say`, `leave`.
+- `meet` walks next to the villager (`moveTo`), waits while they're busy, invites, and waits until both are `participating`.
+- The planner now picks the lead itself and calls `interview?target=…`, so the walk happens before the interview.
+- Chrome was disconnected, so a CLI heartbeat loop kept the world alive.
+
+**Live:**
+- **Vikram** joined as `p:2990`, walked to Gopal, and the conversation started. The interview lines were posted (`c:3145`: Vikram's question; Gopal: "Ramesh told me that Kabir stole a silver hammer from Ramesh.") Then 💥 the crash.
+- Gopal's earlier belief in Lakshmi's rumor was debunked, so it no longer appears.
+- **Verified:** the AI Town messages equal the case transcript; 0 town conversations with the investigator were ingested into the graph; the case recorded the interview once.
+**Anjali takes over in town:**
+- **Run 1:** she joined as `p:3240`, walked to **Ramesh** ("I saw it with my own eyes…") and to **Lakshmi** (new lead: Sarla).
+- ❌ Then she **crashed for real**: `TimeoutError: could not meet p:14`. Sarla was stuck in a long NPC conversation (the CPU LLM makes these last minutes).
+- **Fix:** `meet` gives up after 90 s, and the investigator **postpones** that villager and interviews the next lead first. After 2 failed attempts it interviews them without walking over ("leaves them a note"), so a busy villager never stops the case.
+- **Run 2, same player, resumed from the case file:**
+  1. Sarla busy ⏳, then Pandit Shastri busy ⏳
+  2. **Sarla interviewed in town**
+  3. Pandit Shastri busy again, so a note instead
+  4. ✅ verdict published: theft confirmed (Ramesh saw it), 9 beliefs marked outdated
+
+**❌ → ✅ Two verdict judgement flaws seen in run 2:**
+1. "**Balwant concluded Kabir was involved in the theft…**" (started by Lakshmi) was ruled *unfounded* and cost Lakshmi trust, although it **agrees with the truth**. The distortion check required the same subject.
+   - **Fix:** a near retelling also counts if its text **names the confirmed claim's subject**. `NEAREST_CONFIRMED` now compares against all confirmed claims and returns subject equality and name. Test added.
+2. "**Perhaps Balwant noticed anything unusual…**" (speculation) cost Pandit Shastri trust.
+   - **Fix:** the not-a-statement filter now also drops "perhaps / maybe / possibly / might". Test added.
+- My first patch script for these aborted halfway: the regex anchor didn't match because of my backslash escaping, which left `cases.py` calling a not-yet-renamed helper. Caught immediately and finished with direct edits.
+
+**Tests:** 104 pass. AI Town: 53/53.
+
+**Note:** pipe or redirect the script's output through `python -u` when following it live (it's buffered otherwise).
 
 ---
 
