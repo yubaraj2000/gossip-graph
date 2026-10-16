@@ -243,3 +243,27 @@ def test_retry_reports_a_conversation_it_cannot_rebuild(village):
     db.world_graph(world_id).query("CREATE (:Conversation {id:'c:ghost', status:'failed'})")
     assert ingest.retry_failed(world_id) == [
         {"conversation": "c:ghost", "status": "failed", "error": "transcript incomplete, cannot rebuild"}]
+
+
+def test_concurrent_first_calls_on_a_brand_new_world(world_id):
+    """Seen live: two NPCs reported the same conversation at once for a new world -> 'already indexed' 500."""
+    errors = []
+
+    def first_call():
+        try:
+            assert client.post(f"/worlds/{world_id}/characters", json=[c.model_dump() for c in VILLAGE]).status_code == 200
+        except Exception as e:  # noqa: BLE001 - collect anything, assert below
+            errors.append(e)
+
+    threads = [threading.Thread(target=first_call) for _ in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert errors == []
+    assert len(db.existing_indexes(world_id)) == len(db.RANGE_INDEXES) + len(db.VECTOR_INDEXES)
+
+
+def test_schema_setup_tolerates_a_concurrent_creator(world_id, monkeypatch):
+    """Another process may create the same index between our check and our CREATE."""
+    db.ensure_schema(world_id)
+    monkeypatch.setattr(db, "existing_indexes", lambda _w: set())  # pretend nothing exists yet
+    assert db.ensure_schema(world_id) == []  # every CREATE hits 'already indexed' -> not an error

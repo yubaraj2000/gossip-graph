@@ -1,8 +1,10 @@
 """FalkorDB access: one graph per world, plus idempotent schema setup."""
 import re
+import threading
 from functools import lru_cache
 
 from falkordb import FalkorDB, Graph
+from redis.exceptions import ResponseError
 
 from memory.config import settings
 
@@ -53,13 +55,20 @@ def existing_indexes(world_id: str) -> set[tuple[str, str, str]]:
 
 
 _ready: set[str] = set()
+_ready_lock = threading.Lock()
 
 
 def ensure_world(world_id: str) -> None:
-    """ensure_schema, but only once per world per process (it is on every ingest's hot path)."""
-    if world_id not in _ready:
-        ensure_schema(world_id)
-        _ready.add(world_id)
+    """ensure_schema, but only once per world per process (it is on every ingest's hot path).
+
+    AI Town reports each conversation once per NPC, at the same moment, so a brand-new world gets
+    concurrent first calls: the lock makes one of them set the schema up while the others wait."""
+    if world_id in _ready:
+        return
+    with _ready_lock:
+        if world_id not in _ready:
+            ensure_schema(world_id)
+            _ready.add(world_id)
 
 
 def ensure_schema(world_id: str) -> list[str]:
@@ -68,14 +77,22 @@ def ensure_schema(world_id: str) -> list[str]:
     have = existing_indexes(world_id)
     created = []
     for label, prop in RANGE_INDEXES:
-        if (label, prop, "RANGE") not in have:
-            g.query(f"CREATE INDEX FOR (n:{label}) ON (n.{prop})")
+        if (label, prop, "RANGE") not in have and _create_index(g, f"CREATE INDEX FOR (n:{label}) ON (n.{prop})"):
             created.append(f"{label}.{prop}")
     for label, prop in VECTOR_INDEXES:
-        if (label, prop, "VECTOR") not in have:
-            g.query(
-                f"CREATE VECTOR INDEX FOR (n:{label}) ON (n.{prop}) "
-                f"OPTIONS {{dimension:{settings.embedding_dim}, similarityFunction:'cosine'}}"
-            )
+        if (label, prop, "VECTOR") not in have and _create_index(
+                g, f"CREATE VECTOR INDEX FOR (n:{label}) ON (n.{prop}) "
+                   f"OPTIONS {{dimension:{settings.embedding_dim}, similarityFunction:'cosine'}}"):
             created.append(f"{label}.{prop} (vector)")
     return created
+
+
+def _create_index(g: Graph, cypher: str) -> bool:
+    """True if this call created the index; False if someone else (another thread or process) got there first."""
+    try:
+        g.query(cypher)
+        return True
+    except ResponseError as e:
+        if "already indexed" in str(e):
+            return False
+        raise
