@@ -880,6 +880,47 @@ Possible later extraction filters, and good material for the investigator.
 - circles: {Ramesh, Sarla, Chotu, Lakshmi} and {Meera, Balwant, Pandit Shastri}
 - **leads:** Gopal (hub), Lakshmi (circle voice), Pandit Shastri (circle voice)
 
+**✅ 4.2 + 4.3 Lead planner and interviews: `POST /worlds/{id}/cases/{case}/interview[?target=]`** [AI]
+
+**Design: minds stay private.**
+- An interviewee testifies only about **case-relevant** beliefs, chosen with the vector index: claim distance to the case's title and question < **0.40**.
+- Measured live, for calibration: the true theft at 0.283, its garbled retellings at 0.32, competing theft rumors at 0.33–0.38, unrelated chatter at ≥ 0.42.
+- They name only their **direct** sources ("Gopal told me"), never the whole chain. That forces the trail to be followed interview by interview.
+
+**Each interview:**
+- The answer lines are built from the graph (no LLM).
+- It's recorded as a `Conversation {kind:'interview'}` via the new shared `ingest.record_transcript`.
+- The investigator **hears** each testified claim (`ingest.hear`, Q1), so its own beliefs carry provenance.
+- A `Finding` is written per claim.
+- **Every named source becomes a new lead with priority 0**, which jumps the queue. An interview chosen directly by the investigator gets a `chosen` lead, so the file records why it happened.
+- The lead is closed with `RESOLVED_BY`, and interviews are idempotent ("already_interviewed").
+
+**Fixes:**
+- **❌ → ✅ A seeded test claim had no embedding**, so vector testimony couldn't see it. The helper now embeds it, as real claims always are.
+- **❌ → ✅** `sed '\b…'` doesn't work on macOS; I did the helper renames with Python regex.
+- **❌ → ✅ Directly chosen interviews had no lead,** so the file didn't record them. Fixed.
+- **New ingest filter:** drop "not a statement", i.e. instructions and plans like "Ask Meera about…" or "I'll discreetly ask…", seen in live testimony.
+
+**Tests:** 90 pass. `tests/test_interviews.py` has 6 cases:
+- the trail Tom → Mara → Pip → Bram (witnessed)
+- the investigator knows nothing before interviews, and its theft belief then traces to the eyewitness
+- an interview is never repeated
+- "I haven't heard anything about that"
+- running out of leads
+- the endpoint (404 / 422)
+
+**Live (Inspector Vikram, `case_hammer`), 5 interviews:**
+
+| # | Interviewee | Testimony | New leads |
+|---|---|---|---|
+| 1 | Gopal | "Ramesh told me that Kabir stole…"; "Lakshmi told me that Ramesh stole two iron artifacts from Lakshmi's cart" | Ramesh, Lakshmi |
+| 2 | Lakshmi | "Sarla told me" about the theft; she **started** both artifact rumors | Sarla |
+| 3 | **Ramesh** | "**I saw it with my own eyes: Kabir stole a silver hammer from me**"; he also started the garbled Kabir versions | — |
+| 4 | Sarla | "Ramesh told me" | — |
+| 5 | Pandit Shastri | "Gopal told me"; "Lakshmi told me" | — |
+
+Then `no_open_leads`. **The eyewitness was reached in interview 3, and every competing rumor was traced to its originator.**
+
 ---
 
 ## Open questions

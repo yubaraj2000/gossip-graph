@@ -95,8 +95,8 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
   - gossip hubs (PageRank on `LEARNED_FROM`)
   - bridges (betweenness)
   - cliques (label propagation)
-- [ ] **4.2 Lead planner:** the next interviewee comes from the graph. Start at hubs and bridges, then follow each "who told you?" answer upstream until reaching a witness, or until leads run out.
-- [ ] **4.3 Interview loop:** templated questions from the investigator. NPC answers are grounded in that NPC's own recall and explain. Interviews are ingested like any conversation, so the investigator builds its own beliefs with provenance.
+- [x] **4.2 Lead planner:** the next interviewee comes from the graph. Start at hubs and bridges, then follow each "who told you?" answer upstream until reaching a witness, or until leads run out.
+- [x] **4.3 Interview loop:** templated questions from the investigator. NPC answers are grounded in that NPC's own recall and explain. Interviews are ingested like any conversation, so the investigator builds its own beliefs with provenance.
 - [ ] **4.4 Crash and resume:** kill investigator #1 mid-case. Investigator #2 (knows nothing) reads the case file and finishes **without re-interviewing**.
 - [ ] **4.5 Verdict and debunking:** a report with the evidence chain, e.g. "the theft is witnessed; the 'fence' story was invented by Mara". Publishing it marks believers' copies of debunked claims `superseded` (with `valid_to` and an edge to the verdict; never deleted), and listeners' trust in the rumor's originator drops.
 - [ ] **4.6 Separate villages (light):** one live village plus 1–2 background villages fed by replayed conversations, and an isolation check (Kai is a thief in one, a stranger in another).
