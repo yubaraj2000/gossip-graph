@@ -1,29 +1,8 @@
 """Recall against real FalkorDB: ranking, already-shared damping, reputation, trust, episodes, memory lines."""
-import pytest
 from fastapi.testclient import TestClient
 
-from memory import ingest, recall
+from memory import recall
 from memory.app import app
-from tests.helpers import THEFT, two_way
-
-TROUBLEMAKER = {"subject": "Kai", "predicate": "is", "object": "",
-                "text": "Kai has always been a troublemaker", "valence": -0.2}
-FENCE = {"subject": "Kai", "predicate": "did", "object": "",
-         "text": "Kai was spotted trying to fence a stolen hammer", "valence": -1}
-
-
-@pytest.fixture
-def gossip(village):
-    """Bram -> Pip (theft; Pip adds 'troublemaker'), Pip -> Mara (theft), Mara -> Tom (theft + fence mutation)."""
-    world_id, scripted, _ = village
-    scripted["c:1"] = [{"message_index": 0, **THEFT}, {"message_index": 1, **TROUBLEMAKER}]
-    scripted["c:2"] = [{"message_index": 0, **THEFT}]
-    scripted["c:3"] = [{"message_index": 0, **THEFT}, {"message_index": 0, **FENCE}]
-    ingest.ingest_conversation(world_id, two_way("c:1", "p:1", "p:2", "Kai stole a silver hammer from me!"))
-    ingest.ingest_conversation(world_id, two_way("c:2", "p:2", "p:3", "Kai stole Bram's hammer!"))
-    ingest.ingest_conversation(world_id, two_way("c:3", "p:3", "p:4", "Kai stole it and tried to fence it!"))
-    return world_id
-
 
 def by_text(r):
     return {b["text"]: b for b in r["beliefs"]}

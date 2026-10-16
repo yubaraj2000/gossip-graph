@@ -15,6 +15,10 @@ VILLAGE = [
 NAMES = {c.id: c.name for c in VILLAGE}
 THEFT = {"subject": "Kai", "predicate": "stole_from", "object": "Bram",
          "text": "Kai stole a silver hammer from Bram", "valence": -1}
+TROUBLEMAKER = {"subject": "Kai", "predicate": "is", "object": "",
+                "text": "Kai has always been a troublemaker", "valence": -0.2}
+FENCE = {"subject": "Kai", "predicate": "did", "object": "",
+         "text": "Kai was spotted trying to fence a stolen hammer", "valence": -1}
 # Texts the fake embedder treats as near-duplicates of another text (like a real close paraphrase).
 ALIASES = {"Kai swiped Bram's silver hammer": "Kai stole a silver hammer from Bram"}
 
