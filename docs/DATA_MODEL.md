@@ -4,6 +4,14 @@ Every NPC's memory lives in FalkorDB. An NPC knows something only if there is a 
 
 > **Status:** design for Phase 2. All queries below were run against FalkorDB on 2026-10-16 using a 5-character test village.
 
+## Decisions (Oct 16)
+
+| Topic | Chosen | Possible later additions |
+|---|---|---|
+| Claim types | Fixed predicate vocabulary, plus a free-text fallback with vector dedup | — |
+| Trust | Fixed confidence rules, plus a per-character `gullibility` trait | Trust that learns from false rumors (Phase 4, optional) |
+| Conversation storage | Every message is kept | Condensing old conversations into summaries (Phase 4, optional) |
+
 ## Principles
 
 1. **One graph per world.** The graph is named `world_<convexWorldId>`. Worlds are fully isolated (separate memory per tenant), and writes to different worlds run in parallel.
@@ -38,7 +46,7 @@ graph LR
 
 | Label | Key properties | Memory type | Created by |
 |---|---|---|---|
-| `Character` | `id` (AI Town player id, e.g. `p:3`), `name`, `kind` (`npc` or `human`), `identity` | — | world seed, or a human joining |
+| `Character` | `id` (AI Town player id, e.g. `p:3`), `name`, `kind` (`npc` or `human`), `identity`, `gullibility` (0–1, personality) | — | world seed, or a human joining |
 | `Conversation` | `id` (e.g. `c:29`), `started_at`, `ended_at`, `summary`, `ingested` | **episodic** | ingest |
 | `Message` | `id`, `idx`, `text`, `ts` | **episodic** | ingest |
 | `Event` | `id`, `kind`, `description`, `ts`, `severity` (0–1) | **episodic** (ground truth) | narrator endpoint |
@@ -69,7 +77,7 @@ graph LR
 ## Rules
 
 - **Witnessing:** each witness of an event gets a root belief with `confidence = 1.0`, `origin = 'witnessed'` and a `SAW` edge.
-- **Hearing:** when A tells B a claim, B's incoming confidence is `confidence(A's belief) × trust(B→A)`. If B has no `KNOWS` edge to A, the trust is `0.5`.
+- **Hearing:** when A tells B a claim, B's incoming confidence is `confidence(A's belief) × trust(B→A)`. If B has no `KNOWS` edge to A, the trust is **B's `gullibility`**, the personality trait: suspicious Tom has 0.3, gossipy Mara has 0.7. If that isn't set either, the trust is `0.5`.
 - **Hearing again from another source:** the beliefs combine as `1 − (1 − old)(1 − incoming)`, and a second `HEARD_FROM` edge is added. More independent sources make a belief more certain.
 - **Inventing:** if a speaker asserts a claim it has no belief for, the speaker gets a belief with `origin = 'self'` and confidence 0.6. This is how rumors and lies are born, and `explain` shows that they have no witness.
 - **Idempotency:** AI Town calls "remember conversation" **once per NPC participant**. Ingest therefore checks `Conversation.ingested` and processes each conversation only once.
@@ -81,7 +89,7 @@ graph LR
 ```cypher
 MATCH (lis:Character {id:$listener}), (c:Claim {id:$claim}), (spk:Character {id:$speaker})
 OPTIONAL MATCH (lis)-[k:KNOWS]->(spk)
-WITH lis, c, coalesce(k.trust, 0.5) AS trust
+WITH lis, c, coalesce(k.trust, lis.gullibility, 0.5) AS trust
 MATCH (sb:Belief {holder:$speaker, claim:$claim, status:'active'})
 WITH lis, c, sb, sb.confidence * trust AS incoming
 MERGE (b:Belief {holder:$listener, claim:$claim})
@@ -156,6 +164,7 @@ CREATE INDEX FOR (n:Character) ON (n.id)
 CREATE INDEX FOR (n:Conversation) ON (n.id)
 CREATE INDEX FOR (n:Message) ON (n.id)
 CREATE INDEX FOR (n:Event) ON (n.id)
+CREATE INDEX FOR (n:Claim) ON (n.id)
 CREATE INDEX FOR (n:Claim) ON (n.key)
 CREATE INDEX FOR (n:Belief) ON (n.holder)
 CREATE INDEX FOR (n:Belief) ON (n.claim)
