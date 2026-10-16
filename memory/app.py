@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from memory import db, explain, ingest, llm, recall
 from memory.config import settings
-from memory.models import CharacterIn, ConversationIn
+from memory.models import CharacterIn, ConversationIn, RelationshipIn
 
 log = logging.getLogger("memory")
 
@@ -84,6 +84,15 @@ def upsert_characters(world_id: str, characters: list[CharacterIn]) -> dict:
         raise HTTPException(status_code=422, detail=str(e))
     ingest.upsert_characters(db.world_graph(world_id), characters)
     return {"world": world_id, "characters": len(characters)}
+
+
+@app.post("/worlds/{world_id}/relationships")
+def set_relationships(world_id: str, relationships: list[RelationshipIn]) -> dict:
+    """Seed who-trusts-whom (directed KNOWS edges). Both characters must already exist."""
+    _check_world_id(world_id)
+    db.ensure_world(world_id)
+    done = ingest.set_relationships(db.world_graph(world_id), relationships)
+    return {"world": world_id, "set": done, "skipped_unknown_characters": len(relationships) - done}
 
 
 @app.post("/worlds/{world_id}/conversations")

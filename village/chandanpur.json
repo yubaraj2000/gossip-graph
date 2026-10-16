@@ -1,0 +1,40 @@
+{
+  "village": "Chandanpur",
+  "notes": "Personalities and trust for the graph. Names must match world/data/characters.ts. trust is directed: how much `from` believes what `to` says. Two circles (market: Ramesh, Chotu, Lakshmi, Sarla; temple/school: Pandit Shastri, Meera, Balwant) joined by Gopal the milkman.",
+  "characters": [
+    {"name": "Ramesh", "role": "blacksmith", "gullibility": 0.5},
+    {"name": "Chotu", "role": "apprentice", "gullibility": 0.9},
+    {"name": "Lakshmi", "role": "chai stall owner", "gullibility": 0.8},
+    {"name": "Sarla", "role": "tailor", "gullibility": 0.75},
+    {"name": "Gopal", "role": "milkman", "gullibility": 0.7},
+    {"name": "Pandit Shastri", "role": "temple priest", "gullibility": 0.4},
+    {"name": "Meera", "role": "schoolteacher", "gullibility": 0.35},
+    {"name": "Balwant", "role": "constable", "gullibility": 0.3}
+  ],
+  "relationships": [
+    {"from": "Chotu", "to": "Ramesh", "trust": 0.9},
+    {"from": "Ramesh", "to": "Chotu", "trust": 0.6},
+    {"from": "Chotu", "to": "Lakshmi", "trust": 0.7},
+    {"from": "Lakshmi", "to": "Chotu", "trust": 0.6},
+    {"from": "Ramesh", "to": "Lakshmi", "trust": 0.5},
+    {"from": "Lakshmi", "to": "Ramesh", "trust": 0.7},
+    {"from": "Lakshmi", "to": "Sarla", "trust": 0.85},
+    {"from": "Sarla", "to": "Lakshmi", "trust": 0.8},
+    {"from": "Sarla", "to": "Chotu", "trust": 0.5},
+    {"from": "Chotu", "to": "Sarla", "trust": 0.6},
+    {"from": "Gopal", "to": "Lakshmi", "trust": 0.6},
+    {"from": "Lakshmi", "to": "Gopal", "trust": 0.7},
+    {"from": "Gopal", "to": "Sarla", "trust": 0.5},
+    {"from": "Sarla", "to": "Gopal", "trust": 0.6},
+    {"from": "Gopal", "to": "Balwant", "trust": 0.4},
+    {"from": "Balwant", "to": "Gopal", "trust": 0.5},
+    {"from": "Gopal", "to": "Pandit Shastri", "trust": 0.5},
+    {"from": "Pandit Shastri", "to": "Gopal", "trust": 0.6},
+    {"from": "Pandit Shastri", "to": "Meera", "trust": 0.6},
+    {"from": "Meera", "to": "Pandit Shastri", "trust": 0.7},
+    {"from": "Meera", "to": "Balwant", "trust": 0.6},
+    {"from": "Balwant", "to": "Meera", "trust": 0.5},
+    {"from": "Balwant", "to": "Pandit Shastri", "trust": 0.7},
+    {"from": "Pandit Shastri", "to": "Balwant", "trust": 0.6}
+  ]
+}

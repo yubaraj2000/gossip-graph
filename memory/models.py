@@ -13,6 +13,12 @@ class CharacterIn(BaseModel):
     gullibility: float | None = Field(default=None, ge=0, le=1)
 
 
+class RelationshipIn(BaseModel):
+    source: str  # character id of the one who trusts
+    target: str  # character id of the one being trusted
+    trust: float = Field(ge=0, le=1)  # how much `source` believes what `target` says
+
+
 class MessageIn(BaseModel):
     author: str  # character id
     text: str
