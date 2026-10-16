@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 
-from memory import db, ingest, llm, recall
+from memory import db, explain, ingest, llm, recall
 from memory.config import settings
 from memory.models import CharacterIn, ConversationIn
 
@@ -112,6 +112,14 @@ def recall_memories(world_id: str, me: str, other: str, k: int = Query(5, ge=1, 
     Graph-only (no LLM), so it is fast enough to call before every line of dialogue."""
     _check_world_id(world_id)
     return recall.recall(world_id, me, other, k=k, episodes=episodes)
+
+
+@app.get("/worlds/{world_id}/explain")
+def explain_beliefs(world_id: str, holder: str, claim: str | None = None, subject: str | None = None) -> dict:
+    """"Who told you that?": every provenance path behind `holder`'s beliefs (optionally one claim, or one subject),
+    with the line heard at each hop and an answer sentence built straight from the graph."""
+    _check_world_id(world_id)
+    return explain.explain(world_id, holder, claim=claim, subject=subject)
 
 
 def _check_world_id(world_id: str) -> None:
