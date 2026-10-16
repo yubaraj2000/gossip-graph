@@ -76,7 +76,7 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 
 ## Phase 3 — Connect the world to the graph
 
-- [ ] **3.1** Replace AI Town's memory (`convex/agent/memory.ts` plus its 3 call sites) with calls to our service, and **delete its vector memory** so FalkorDB is essential.
+- [x] **3.1** Replace AI Town's memory (`convex/agent/memory.ts` plus its 3 call sites) with calls to our service, and **delete its vector memory** so FalkorDB is essential.
 - [ ] **3.2** Replace the default characters with our village: 8–10 NPCs with roles, a who-knows-whom network, and trust values.
 - [ ] **3.3** A "narrator" endpoint to inject an event (e.g. "Kai stole from Bram", witnessed by Bram).
 - [ ] **3.4** End-to-end check: inject the theft, let NPCs talk, ask Mara "who told you?", and confirm the chain is correct.

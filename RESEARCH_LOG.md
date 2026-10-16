@@ -629,7 +629,7 @@ One expectation of mine had a rounding error (0.26 vs 0.259). I fixed the test, 
 
 ### Oct 16 — Phase 2 review checkpoint
 
-**🔬 Started. Wrote `docs/WALKTHROUGH.md`** [AI]
+**✅ Done (sections 1–4 walked through; 5–6 skipped at [me]'s request; they're in the doc). Wrote `docs/WALKTHROUGH.md`** [AI]
 
 A plain-language tour, reviewed section by section with the participant [me]:
 1. The big picture (the AI is used in only 2 places)
@@ -640,6 +640,48 @@ A plain-language tour, reviewed section by section with the participant [me]:
 6. Judge-style practice questions with answers
 
 It's reusable for the README and the demo script.
+
+### Oct 16 — Phase 3: Connect the world to the graph
+
+**✅ 3.1 AI Town's memory replaced by the graph-memory service** [AI]
+
+These are the first changes to `world/` since the pristine import (`2ddae25`): 7 files, +115/−591.
+
+- **`convex/agent/memory.ts` rewritten** (488 → ~130 lines):
+  - `rememberConversation` (same signature, so `agentOperations.ts` is unchanged) loads every villager plus the participants and messages via the new internal query `loadForMemory`. It then calls `POST /worlds/{worldId}/characters` and `POST /worlds/{worldId}/conversations`.
+  - `recallMemories` calls `GET /recall` and returns first-person memory lines plus the last conversation summary.
+  - **On service errors, both log and continue:** the agent loop never stalls, and the service retries anything it received.
+- **`conversation.ts`:**
+  - start and continue now use `recallMemories` (no per-turn embedding call any more)
+  - "previous conversation" detection uses the recalled summary
+  - added `gossipInstructions`: "If your memories include news about other villagers, bring up the most interesting piece in your own words", the nudge the preview proved necessary
+- **Deleted AI Town's vector memory (rule 3):**
+  - `memories`, `memoryEmbeddings` (1024-d vector index) and `embeddingsCache` tables
+  - `embeddingsCache.ts`, importance scoring and reflections
+  - those tables in the daily vacuum cron
+  - `grep` finds only comments mentioning them now.
+- **Removing tables needed empty data:** set `testing.ts` `excludedTables` to `[]` so the wipe includes the cache, deployed, ran `testing:wipeAllTables`, then deployed the new schema with `--typecheck enable` ✅
+- Convex env `MEMORY_SERVICE_URL=http://host.docker.internal:8100`. `npx convex run init` created the new world `m176n4n5ak3hat4abpdtbe6scn8gd6z1` (default AI Town characters until step 3.2).
+
+**Live result** (the town ran about 2 h while the session was paused):
+
+| Measure | Result |
+|---|---|
+| Recall calls from Convex | **28 `GET /recall` → 200** |
+| Conversation posts | 5 `POST /conversations` → 200 |
+| Ingested into `world_m176…` | **3 conversations** |
+| Graph contents | 30 messages, 2 claims, 3 beliefs |
+
+- Example: Pete said "entropy is the work of the devil", so Alice believes it at 30%, HEARD_FROM Pete.
+- The default characters mostly philosophize, so there are few claims about people. Step 3.2's village fixes that.
+
+**❌ → ✅ Race found live:** one `POST /characters` → **500 `Attribute 'id' is already indexed`**.
+- **Cause:** a brand-new world gets the same conversation from both NPCs at the same moment. Both requests ran `ensure_schema`, and both tried `CREATE INDEX`.
+- Harmless that time (the other NPC's call still ingested the conversation), but real.
+- **Fix:** a `threading.Lock` in `ensure_world`, plus `_create_index` treating "already indexed" as success, in case another process got there first.
+- **Tests:** 8-thread first-call race on a new world, plus a concurrent-creator tolerance test. 63 pass.
+
+**Note:** Convex logged `engineNotRunning` errors at 16:08 for engine `ks737…`. Those are leftovers from the wiped world's scheduled steps and unrelated.
 
 ---
 
