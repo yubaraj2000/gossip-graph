@@ -60,7 +60,7 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 
 ## Phase 2 — Graph data model and memory service (core original work)
 
-- [ ] **2.1** Design the graph model and write it up in `docs/DATA_MODEL.md`. It is needed for the README.
+- [x] **2.1** Design the graph model and write it up in `docs/DATA_MODEL.md`. It is needed for the README.
   - Nodes: `NPC`, `Player`, `Location`, `Event`, `Conversation`, `Message`, `Belief`, `Task`
   - Relationships: `KNOWS {trust}`, `HELD_BY`, `ABOUT`, `FROM`, `WITNESSED`, `PARTICIPATED_IN`
   - Time fields on beliefs so they can be marked outdated instead of deleted

@@ -26,6 +26,7 @@ Newest entries go at the bottom of each section.
 | Oct 16 | Principle: **"graph is the brain, LLM is the mouth"** | All NPC knowledge, gossip and reputation live in FalkorDB and are computed with Cypher. The LLM only renders dialogue. This keeps LLM cost low and the graph essential. | LLM-driven NPC-to-NPC conversations |
 | Oct 16 | LLM: **Ollama on the Ubuntu box** (CPU), reached from the Mac via an SSH tunnel on port 11435 | Free and unlimited, and the models are already installed; free API tiers are too small for constant NPC chatter. Keeps the Mac's 16 GB free for Docker. | Free API tiers (Groq, Gemini, OpenRouter); Ollama on the Mac |
 | Oct 16 | **Git is done by the participant**: Claude provides the commands and commit messages, and never runs git | The participant owns the repo history, which is the evidence for rule 8 | Claude running git |
+| Oct 16 | **GO on AI Town** as the base world | Phase 1 test: every part works; about 8 s per NPC reply; the Mac has memory headroom | Plan B (Python village from scratch) |
 
 ---
 
@@ -271,6 +272,30 @@ Sources are web articles from Sept–Oct 2026, and they partly conflict.
 - `world/` still identical to upstream ✅
 
 Go/no-go is the participant's call [me].
+
+### Oct 16 — Phase 2: Graph data model and memory service
+
+**✅ 2.1 Data model designed and validated: `docs/DATA_MODEL.md`** [AI]
+- **Nodes:**
+  - `Character`
+  - `Conversation`, `Message` (episodic)
+  - `Event` (ground truth)
+  - `Claim` (the proposition)
+  - `Belief` (one per holder and claim: confidence, origin, status)
+  - later: `Task`, `Rule`
+- **Key idea:** `Belief -[:HEARD_FROM]-> Belief` is provenance. A root belief either `SAW` an `Event` (witnessed) or has `origin='self'` (invented rumor).
+- **Validated on the temp graph `__dm_check` (5 characters, deleted afterwards):**
+  - **Ingest:** chained confidence Bram → Pip 0.90 → Mara 0.72 → Tom 0.43. A second source (Bram → Tom) raised Tom's belief to 0.60 via noisy-OR ✅
+  - **Explain:** Tom's belief returns both paths, `Tom←Bram` and `Tom←Mara←Pip←Bram`. The invented rumor returns `Mara←Pip` with origin `self` ✅
+  - **Reputation:** Tom's view of Kai is −0.48 ✅
+  - **Vector dedup:** score 0.001 for a near-duplicate vs 0.947 for an unrelated claim, which **confirms score is a distance** ✅
+  - **PageRank on `LEARNED_FROM`** (listener→speaker) ranks the sources: Bram 0.37 first. This fixes the earlier direction catch ✅
+  - ⚠️ Label propagation is noisy on 5 nodes; re-check with the real village.
+- **❌ → ✅ Recall:**
+  - **First version:** hard-filtered to claims about the listener or people the listener knows. Mara therefore wouldn't gossip to Tom about the stranger Kai ❌
+  - **Fix:** relevance weighting instead of a filter (2 if about the listener, 1.5 if about someone the listener knows, 1 otherwise), giving `score = confidence × |valence| × relevance`.
+- **❌ FalkorDB gotcha:** `CASE WHEN (s)<-[:KNOWS]-(...)` fails with `Invalid input Colon`. Pattern predicates only work in `WHERE`. **Fix:** `OPTIONAL MATCH ... count(kk) > 0`. After the fix, recall returns both the Kai theft (score 0.58) and the rumor about Tom (0.58) ✅
+- **AI Town detail:** `rememberConversation` is called **once per NPC participant**, so ingest is made idempotent with `Conversation.ingested`.
 
 ---
 
