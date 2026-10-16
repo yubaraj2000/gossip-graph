@@ -266,6 +266,7 @@ export const conversationInputs = {
       if (!invitee) {
         throw new Error(`Invalid player ID: ${inviteeId}`);
       }
+      player.lastInput = now; // gossip-graph: inputs count as activity
       console.log(`Starting ${playerId} ${inviteeId}...`);
       const { conversationId, error } = Conversation.start(game, now, player, invitee);
       if (!conversationId) {
@@ -318,6 +319,10 @@ export const conversationInputs = {
       }
       if (conversation.isTyping && conversation.isTyping.playerId === playerId) {
         delete conversation.isTyping;
+      }
+      const sender = game.world.players.get(playerId);
+      if (sender) {
+        sender.lastInput = now; // gossip-graph: inputs count as activity
       }
       conversation.lastMessage = { author: playerId, timestamp: args.timestamp };
       conversation.numMessages++;

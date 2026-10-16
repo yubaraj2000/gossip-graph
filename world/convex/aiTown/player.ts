@@ -299,6 +299,7 @@ export const playerInputs = {
       if (!player) {
         throw new Error(`Invalid player ID ${playerId}`);
       }
+      player.lastInput = now; // gossip-graph: inputs count as activity (lastInput was never refreshed)
       if (args.destination) {
         movePlayer(game, now, player, args.destination);
       } else {

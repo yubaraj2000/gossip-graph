@@ -76,3 +76,6 @@ export const ENGINE_ACTION_DURATION = 30000;
 export const MAX_PATHFINDS_PER_STEP = 16;
 
 export const DEFAULT_NAME = 'Me';
+
+// gossip-graph: players whose token starts with this are investigators driven by scripts/investigate.py.
+export const INVESTIGATOR_TOKEN_PREFIX = 'investigator:';

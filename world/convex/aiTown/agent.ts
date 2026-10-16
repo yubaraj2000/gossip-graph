@@ -15,6 +15,7 @@ import {
   MESSAGE_COOLDOWN,
   MIDPOINT_THRESHOLD,
   PLAYER_CONVERSATION_COOLDOWN,
+  INVESTIGATOR_TOKEN_PREFIX,
 } from '../constants';
 import { FunctionArgs } from 'convex/server';
 import { MutationCtx, internalMutation, internalQuery } from '../_generated/server';
@@ -81,6 +82,8 @@ export class Agent {
         player: player.serialize(),
         otherFreePlayers: [...game.world.players.values()]
           .filter((p) => p.id !== player.id)
+          // gossip-graph: investigators choose whom to interview; villagers don't invite them.
+          .filter((p) => !p.human?.startsWith(INVESTIGATOR_TOKEN_PREFIX))
           .filter(
             (p) => ![...game.world.conversations.values()].find((c) => c.participants.has(p.id)),
           )
@@ -159,6 +162,11 @@ export class Agent {
         return;
       }
       if (member.status.kind === 'participating') {
+        // gossip-graph: in an interview, both sides' lines are posted by the investigator script from the graph
+        // (the villager's testimony word for word), so the villager's own LLM stays quiet.
+        if (otherPlayer.human?.startsWith(INVESTIGATOR_TOKEN_PREFIX)) {
+          return;
+        }
         const started = member.status.started;
         if (conversation.isTyping && conversation.isTyping.playerId !== player.id) {
           // Wait for the other player to finish typing.

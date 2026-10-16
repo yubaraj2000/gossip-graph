@@ -7,6 +7,7 @@ import { ActionCtx, internalQuery } from '../_generated/server';
 import { Id } from '../_generated/dataModel';
 import { internal } from '../_generated/api';
 import { GameId, conversationId } from '../aiTown/ids';
+import { INVESTIGATOR_TOKEN_PREFIX } from '../constants';
 
 const selfInternal = internal.agent.memory;
 
@@ -46,11 +47,12 @@ export async function rememberConversation(
   _playerId: GameId<'players'>,
   conversationId: GameId<'conversations'>,
 ) {
-  const { characters, participants, messages } = await ctx.runQuery(selfInternal.loadForMemory, {
+  const { characters, participants, messages, interview } = await ctx.runQuery(selfInternal.loadForMemory, {
     worldId,
     conversationId,
   });
-  if (!messages.length) {
+  // Interviews are recorded by the case endpoint (scripts/investigate.py); ingesting them again would duplicate them.
+  if (!messages.length || interview) {
     return;
   }
   const byId = new Map(characters.map((c) => [c.id, c]));
@@ -132,8 +134,21 @@ export const loadForMemory = internalQuery({
         q.eq('worldId', args.worldId).eq('conversationId', args.conversationId),
       )
       .collect();
+    const tokens = new Map<string, string | undefined>(world.players.map((p) => [p.id as string, p.human]));
+    for (const id of conversation.participants) {
+      if (!tokens.has(id)) {
+        const archived = await ctx.db
+          .query('archivedPlayers')
+          .withIndex('worldId', (q) => q.eq('worldId', args.worldId).eq('id', id))
+          .first();
+        tokens.set(id, archived?.human);
+      }
+    }
     return {
       characters,
+      interview: conversation.participants.some((id) =>
+        tokens.get(id)?.startsWith(INVESTIGATOR_TOKEN_PREFIX),
+      ),
       participants: conversation.participants as string[],
       messages: messages.map((m) => ({ author: m.author as string, text: m.text, ts: m._creationTime })),
     };
