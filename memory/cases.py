@@ -208,6 +208,49 @@ def case_file(world_id: str, case_id: str) -> dict:
     }
 
 
+def assign(world_id: str, case_id: str, investigator: CharacterIn) -> dict:
+    """Hand the case to a (new) investigator. They know nothing but what the case file says: the returned
+    handoff summary is everything they start with. The previous investigator becomes inactive."""
+    g = db.world_graph(world_id)
+    case_file(world_id, case_id)  # raises CaseNotFound
+    ingest.upsert_characters(g, [investigator])
+    g.query(ASSIGN, {"case": case_id, "investigator": investigator.id, "ts": time.time() * 1000})
+    file = case_file(world_id, case_id)
+    return {**file, "handoff": handoff_summary(file)}
+
+
+def handoff_summary(file: dict) -> list[str]:
+    """What a newcomer learns from reading the case file, in plain sentences (built from the graph, no LLM)."""
+    lines = [f"Case: {file['title']}. {file['question']}"]
+    if file["briefing"]:
+        lines += [f"Briefing: {s}" for s in file["briefing"]["summary"]]
+    by_investigator: dict[str, list[str]] = defaultdict(list)
+    investigators = {i["name"] for i in file["investigators"]}
+    for iv in file["interviews"]:
+        who = [p for p in iv["participants"] if p not in investigators]
+        by = [p for p in iv["participants"] if p in investigators]
+        by_investigator[by[0] if by else "someone"] += who
+    for name, people in by_investigator.items():
+        lines.append(f"{name} interviewed {_and(people)}.")
+    claims: dict[str, list[str]] = defaultdict(list)
+    for f in file["findings"]:
+        if f["testimony"] == "witnessed":
+            claims[f["text"]].append(f"{f['said_by']} saw it happen")
+        elif f["testimony"] == "heard":
+            claims[f["text"]].append(f"{f['said_by']} heard it from {_and(f['sources'])}")
+        else:
+            claims[f["text"]].append(f"{f['said_by']} started it (nobody told them)")
+    for text, notes in claims.items():
+        lines.append(f'Finding: "{text}": ' + "; ".join(notes) + ".")
+    open_leads = [ld for ld in file["leads"] if ld["status"] == "open"]
+    if open_leads:
+        lines.append("Open leads: " + "; ".join(f"{ld['name']} ({ld['reason']})" for ld in open_leads))
+        lines.append(f"Next: interview {open_leads[0]['name']}.")
+    else:
+        lines.append("No open leads left.")
+    return lines
+
+
 def interview(world_id: str, case_id: str, target: str | None = None) -> dict:
     """The active investigator interviews the next lead (or `target`), writes everything to the case file, and
     turns every named source into a new lead. Interviewees answer from their own beliefs, word for word."""

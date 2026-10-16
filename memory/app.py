@@ -161,6 +161,17 @@ def case_file(world_id: str, case_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"no case {case_id!r}")
 
 
+@app.post("/worlds/{world_id}/cases/{case_id}/assign")
+def assign_investigator(world_id: str, case_id: str, investigator: CharacterIn) -> dict:
+    """Hand the case to a new investigator (e.g. after the previous one crashed). Returns the case file plus a
+    handoff summary: everything the newcomer learns from it."""
+    _check_world_id(world_id)
+    try:
+        return cases.assign(world_id, case_id, investigator)
+    except cases.CaseNotFound:
+        raise HTTPException(status_code=404, detail=f"no case {case_id!r}")
+
+
 @app.post("/worlds/{world_id}/cases/{case_id}/interview")
 def interview(world_id: str, case_id: str, target: str | None = None) -> dict:
     """The active investigator interviews the next open lead (or `target`). Interviewees answer from their own
