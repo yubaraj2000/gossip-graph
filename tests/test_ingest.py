@@ -111,7 +111,7 @@ def test_api_ingest_endpoint(village):
 
 def test_names_with_forms_of_address_resolve_unambiguously():
     people = {"bram": "p:1", "pandit shastri": "p:5", "balwant": "p:6", "gopal": "p:7"}
-    resolve = ingest._resolve_person
+    resolve = ingest.resolve_person
     assert resolve("Balwant Singh", people) == "p:6"
     assert resolve("Shastri ji", people) == "p:5"
     assert resolve("Pandit ji", people) == "p:5"

@@ -246,7 +246,7 @@ def _ingest(g: Graph, conv: ConversationIn) -> dict:
 
     beliefs = []
     for c, emb in zip(claims, embeddings):
-        c["id"] = _resolve_claim(g, c, emb, ts)
+        c["id"] = resolve_claim(g, c, emb, ts)
         msg = msgs[c["message_index"]]
         g.query(ENSURE_SPEAKER_BELIEF, {"speaker": c["speaker"], "claim": c["id"], "confidence": INVENTED_CONFIDENCE,
                                         "msg": msg["id"], "ts": msg["ts"]})
@@ -279,7 +279,7 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
             continue
         parsed.append((idx, valence, rc))
     for idx, valence, rc in sorted(parsed, key=lambda p: -1 if p[0] is None else p[0]):
-        subject = _resolve_person(_text(rc.get("subject")), people)
+        subject = resolve_person(_text(rc.get("subject")), people)
         text = _text(rc.get("text"))
         if idx is None or not 0 <= idx < len(msgs):
             dropped.append({**rc, "reason": "message_index out of range"})
@@ -291,7 +291,7 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
             dropped.append({**rc, "reason": "text does not name the subject"})
             continue
         predicate = rc.get("predicate") if rc.get("predicate") in extract.PREDICATES else "did"
-        obj = _resolve_person(_text(rc.get("object")), people)
+        obj = resolve_person(_text(rc.get("object")), people)
         if predicate in PERSON_PREDICATES and obj is None:
             # e.g. object "a silver hammer" for stole_from: take the other person named in the text instead
             obj = next((cid for name, cid in people.items() if cid != subject and _names_person(text, name)), None)
@@ -311,7 +311,7 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
     return ok, dropped
 
 
-def _resolve_claim(g: Graph, c: dict, embedding: list[float], ts: float) -> str:
+def resolve_claim(g: Graph, c: dict, embedding: list[float], ts: float) -> str:
     """Same structured key -> same claim; else a near-identical claim about the same subject; else a new claim."""
     existing = g.ro_query("MATCH (k:Claim {key: $key}) RETURN k.id", {"key": c["key"]}).result_set
     if existing:
@@ -339,7 +339,7 @@ def _text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _resolve_person(raw: str, people: dict[str, str]) -> str | None:
+def resolve_person(raw: str, people: dict[str, str]) -> str | None:
     """Character id for a name as the model wrote it: exact, or an unambiguous match ignoring forms of address
     ("Balwant Singh" -> Balwant, "Shastri ji" / "Pandit ji" -> Pandit Shastri). Unknown people -> None."""
     exact = people.get(raw.lower())

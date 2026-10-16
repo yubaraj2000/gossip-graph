@@ -10,9 +10,9 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 
-from memory import db, explain, ingest, llm, recall
+from memory import db, explain, ingest, llm, narrate, recall
 from memory.config import settings
-from memory.models import CharacterIn, ConversationIn, RelationshipIn
+from memory.models import CharacterIn, ConversationIn, EventIn, RelationshipIn
 
 log = logging.getLogger("memory")
 
@@ -93,6 +93,19 @@ def set_relationships(world_id: str, relationships: list[RelationshipIn]) -> dic
     db.ensure_world(world_id)
     done = ingest.set_relationships(db.world_graph(world_id), relationships)
     return {"world": world_id, "set": done, "skipped_unknown_characters": len(relationships) - done}
+
+
+@app.post("/worlds/{world_id}/events")
+def narrate_event(world_id: str, event: EventIn) -> dict:
+    """Narrator: record something that really happened, ground the matching claim and give witnesses a
+    'witnessed' belief. Idempotent for the same event."""
+    _check_world_id(world_id)
+    try:
+        return narrate.narrate(world_id, event)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except llm.LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.post("/worlds/{world_id}/conversations")

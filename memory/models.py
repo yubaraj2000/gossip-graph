@@ -19,6 +19,20 @@ class RelationshipIn(BaseModel):
     trust: float = Field(ge=0, le=1)  # how much `source` believes what `target` says
 
 
+class EventIn(BaseModel):
+    """Something that really happened (narrator). Characters may be given by id or by name."""
+    kind: str  # one of the claim predicates, e.g. "stole_from"
+    actor: str
+    target: str | None = None
+    description: str  # e.g. "Kabir stole a silver hammer from Ramesh's forge"
+    claim: str | None = None  # what people will say about it; defaults to the description
+    valence: float = Field(default=-0.8, ge=-1, le=1)  # how it reflects on the actor
+    severity: float = Field(default=0.8, ge=0, le=1)
+    witnesses: list[str] = []
+    id: str | None = None  # defaults to a hash of the event, so re-sending it is harmless
+    ts: float | None = None  # ms since epoch; defaults to now
+
+
 class MessageIn(BaseModel):
     author: str  # character id
     text: str
