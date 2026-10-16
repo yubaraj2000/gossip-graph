@@ -25,7 +25,8 @@ ALIASES = {"Kai swiped Bram's silver hammer": "Kai stole a silver hammer from Br
 
 # Texts the fake embedder puts at about 0.18 cosine distance from another text: a garbled retelling, not the
 # same claim (dedup merges below 0.10) but close enough to count as a distortion (below 0.27).
-DISTORTIONS = {"Kai lost Bram's hammer somewhere": "Kai stole a silver hammer from Bram"}
+DISTORTIONS = {"Kai lost Bram's hammer somewhere": "Kai stole a silver hammer from Bram",
+               "Tom concluded Kai took Bram's hammer": "Kai stole a silver hammer from Bram"}
 
 
 def fake_embed(texts):

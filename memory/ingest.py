@@ -18,9 +18,10 @@ STALE_INGEST_MS = 10 * 60 * 1000
 # Claims this close to neutral are not gossip ("Lakshmi heard fascinating tales lately", valence 0.0). Recall ranks
 # by |valence|, so they would never surface anyway; dropping them keeps the graph readable.
 MIN_ABS_VALENCE = 0.15
-# Instructions and plans aren't claims about anyone ("Ask Meera about...", "I'll discreetly ask Sarla...").
+# Instructions, plans and speculation aren't claims ("Ask Meera about...", "I'll ask Sarla...", "Perhaps Balwant...").
 NOT_A_STATEMENT = re.compile(
-    r"^(ask|tell|let'?s|let|go|find|check|look|see|please|don'?t|i'?ll|i will|i'm going|we should|we need)\b",
+    r"^(ask|tell|let'?s|let|go|find|check|look|see|please|don'?t|i'?ll|i will|i'm going|we should|we need"
+    r"|perhaps|maybe|possibly|might)\b",
     re.IGNORECASE)
 # Forms of address dropped when matching names ("Pandit ji", "Gopal bhai", "Balwant Singh").
 HONORIFICS = {"ji", "bhai", "didi", "sahib", "saab", "baba", "kaka", "chacha", "singh", "mr", "mrs", "the"}
@@ -311,14 +312,14 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
             # instructions/plans, questions, and lowercase fragments ("does that mean you've got it fixed…")
             dropped.append({**rc, "reason": "not a statement"})
             continue
-        if not _names_person(text, id_to_name[subject]):
+        if not names_person(text, id_to_name[subject]):
             dropped.append({**rc, "reason": "text does not name the subject"})
             continue
         predicate = rc.get("predicate") if rc.get("predicate") in extract.PREDICATES else "did"
         obj = resolve_person(_text(rc.get("object")), people)
         if predicate in PERSON_PREDICATES and obj is None:
             # e.g. object "a silver hammer" for stole_from: take the other person named in the text instead
-            obj = next((cid for name, cid in people.items() if cid != subject and _names_person(text, name)), None)
+            obj = next((cid for name, cid in people.items() if cid != subject and names_person(text, name)), None)
             if obj is None:
                 predicate = "did"
         # A structured key only identifies a claim when it names two people ("kabir|stole_from|p:0": "stole" and
@@ -377,7 +378,7 @@ def resolve_person(raw: str, people: dict[str, str]) -> str | None:
     return matches.pop() if len(matches) == 1 else None
 
 
-def _names_person(text: str, name: str) -> bool:
+def names_person(text: str, name: str) -> bool:
     """The text refers to this person by any word of their name ("Shastri ji" names Pandit Shastri)."""
     return any(_mentions(text, w) for w in name.split() if w.lower() not in HONORIFICS)
 

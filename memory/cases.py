@@ -172,10 +172,12 @@ ORDER BY cv.ended_at
 """
 
 
+# The closest confirmed claim, and whether the unfounded one is about the same person.
 NEAREST_CONFIRMED = """
-MATCH (u:Claim {id: $claim})-[:ABOUT]->(s:Character)<-[:ABOUT]-(c:Claim)
+MATCH (u:Claim {id: $claim})-[:ABOUT]->(us:Character)
+MATCH (c:Claim)-[:ABOUT]->(cs:Character)
 WHERE c.id IN $confirmed AND u.embedding IS NOT NULL AND c.embedding IS NOT NULL
-RETURN c.text, vec.cosineDistance(u.embedding, c.embedding) AS d
+RETURN c.text, vec.cosineDistance(u.embedding, c.embedding) AS d, us.id = cs.id, cs.name
 ORDER BY d LIMIT 1
 """
 
@@ -384,7 +386,9 @@ def verdict(world_id: str, case_id: str) -> dict:
             continue
         near = g.ro_query(NEAREST_CONFIRMED, {"claim": c["claim"],
                                               "confirmed": [x["claim"] for x in confirmed]}).result_set
-        if near and near[0][1] < DISTORTION_MAX:
+        # A retelling of a confirmed claim is about the same person, or at least names them ("Balwant concluded
+        # Kabir was involved in the theft" agrees with the truth; it isn't a lie). Seen live in step 4.7.
+        if near and near[0][1] < DISTORTION_MAX and (near[0][2] or ingest.names_person(c["text"], near[0][3])):
             distorted.append({**c, "retelling_of": near[0][0]})
         else:
             unfounded.append(c)

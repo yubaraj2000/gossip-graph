@@ -122,8 +122,8 @@ def test_names_with_forms_of_address_resolve_unambiguously():
     assert resolve("Ramu Patel", people) is None  # invented outsider
     assert resolve("", people) is None
     assert resolve("Pandit Gopal", {"pandit shastri": "p:5", "gopal": "p:7"}) is None  # ambiguous -> no guess
-    assert ingest._names_person("Shastri ji is wary of gossip", "Pandit Shastri")
-    assert not ingest._names_person("The priest is wary of gossip", "Pandit Shastri")
+    assert ingest.names_person("Shastri ji is wary of gossip", "Pandit Shastri")
+    assert not ingest.names_person("The priest is wary of gossip", "Pandit Shastri")
 
 
 def test_different_generic_claims_about_one_person_stay_separate(village):
@@ -146,5 +146,7 @@ def test_questions_and_fragments_are_not_claims():
          "text": "Did Tom really carry milk on a rickety old bicycle?"},
         {"message_index": 0, "subject": "Tom", "predicate": "did", "object": "", "valence": -0.5,
          "text": "does that mean Tom has it fixed in time"},
+        {"message_index": 0, "subject": "Tom", "predicate": "did", "object": "", "valence": -0.5,
+         "text": "Perhaps Tom noticed anything unusual at the forge"},
     ], msgs, people)
-    assert [d["reason"] for d in dropped] == ["not a statement", "not a statement"]
+    assert [d["reason"] for d in dropped] == ["not a statement"] * 3

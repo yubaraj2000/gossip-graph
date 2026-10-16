@@ -92,3 +92,19 @@ def test_verdict_endpoint(solved):
     assert http.post(f"/worlds/{world_id}/cases/case_hammer/verdict").json()["status"] == "solved"
     assert http.post(f"/worlds/{world_id}/cases/case_hammer/interview").status_code == 409
     assert http.post(f"/worlds/{world_id}/cases/nope/verdict").status_code == 404
+
+
+def test_a_retelling_about_someone_else_that_names_the_culprit_is_not_a_lie(case, monkeypatch):  # noqa: F811
+    """Seen live: "Balwant concluded Kabir was involved in the theft" (subject Balwant) was ruled unfounded."""
+    from memory import extract
+    world_id = case
+    monkeypatch.setattr(extract, "extract", lambda conv, known_people: {"summary": "s", "claims": [
+        {"message_index": 0, "subject": "Tom", "predicate": "did", "object": "",
+         "text": "Tom concluded Kai took Bram's hammer", "valence": -0.3}]})
+    ingest.ingest_conversation(world_id, two_way("c:5", "p:3", "p:2", "Tom concluded Kai took Bram's hammer."))
+    cases.interview(world_id, "case_hammer", target="p:2")  # Pip heard it from Mara
+    cases.interview(world_id, "case_hammer", target="p:3")  # Mara started it
+    cases.interview(world_id, "case_hammer", target="p:1")  # Bram saw the theft
+    v = cases.verdict(world_id, "case_hammer")
+    assert "Tom concluded Kai took Bram's hammer" in [c["text"] for c in v["distorted"]]
+    assert "Tom concluded Kai took Bram's hammer" not in [c["text"] for c in v["unfounded"]]
