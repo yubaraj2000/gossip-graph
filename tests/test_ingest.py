@@ -86,13 +86,16 @@ def test_validation_fixes_or_drops_bad_claims():
         {"message_index": 7, "subject": "Kai", "predicate": "is", "object": "", "text": "Kai is rude", "valence": -0.5},
         {"message_index": 0, "subject": "Kai", "predicate": "did", "object": "",
          "text": "Kai heard fascinating tales lately", "valence": 0.0},
+        {"message_index": 0, "subject": "Tom", "predicate": "did", "object": "",
+         "text": "Ask Tom about the stolen artifacts", "valence": -0.5},
     ], msgs, people)
     assert [(c["key"], c["valence"], c["speaker"]) for c in ok] == [
         ("p:9|stole_from|p:1", -1.0, "p:1"),  # object fixed from the text, valence clamped
         ("p:9|did|miller", 0.5, "p:2"),        # no person to help -> downgraded to "did"
     ]
     assert sorted(d["reason"] for d in dropped) == [
-        "message_index out of range", "neutral, not gossip", "text does not name the subject", "unknown subject"]
+        "message_index out of range", "neutral, not gossip", "not a statement", "text does not name the subject",
+        "unknown subject"]
 
 
 def test_api_ingest_endpoint(village):

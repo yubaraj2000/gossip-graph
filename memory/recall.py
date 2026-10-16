@@ -101,11 +101,11 @@ def topic(candidates: list[dict], my_name: str) -> str | None:
         return None
     b = max(pool, key=lambda b: b["confidence"] * abs(b["valence"])
             * (WITNESSED_TOPIC_BOOST if b["origin"] == "witnessed" else 1.0))
-    text = _as_me(b["text"], my_name).rstrip(".")
+    text = as_me(b["text"], my_name).rstrip(".")
     if b["origin"] == "witnessed":
         line = f"I saw it with my own eyes: {text}."
     elif b["origin"] == "heard":
-        line = f"{_names(b['told_by'])} told me that {_lower_first(text)}."
+        line = f"{and_names(b['told_by'])} told me that {lower_first(text)}."
     else:
         line = f"{text}."
     return " ".join(line.replace('"', "'").split())[:TOPIC_MAX_CHARS]
@@ -127,13 +127,13 @@ def describe(r: dict, my_name: str, other_name: str) -> list[str]:
         lines.append(f"Last time {other_name} and I talked: {r['episodes'][0]['summary']}")
     for b in r["beliefs"]:
         sure = _confidence_words(b["confidence"])
-        b = {**b, "text": _as_me(b["text"], my_name)}
+        b = {**b, "text": as_me(b["text"], my_name)}
         if b["origin"] == "witnessed":
             line = f"I saw it myself: {b['text']}."
         elif b["origin"] == "self":
-            line = f"I've been saying that {_lower_first(b['text'])} ({sure})."
+            line = f"I've been saying that {lower_first(b['text'])} ({sure})."
         else:
-            line = f"{_names(b['told_by'])} told me that {_lower_first(b['text'])} ({sure})."
+            line = f"{and_names(b['told_by'])} told me that {lower_first(b['text'])} ({sure})."
         if b["already_shared"]:
             line += f" {other_name} and I already talked about this."
         lines.append(line)
@@ -175,13 +175,13 @@ def _reputation_words(score: float) -> str:
     return "very good"
 
 
-def _names(names: list[str]) -> str:
+def and_names(names: list[str]) -> str:
     if not names:
         return "Someone"
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def _as_me(text: str, my_name: str) -> str:
+def as_me(text: str, my_name: str) -> str:
     """'Kai stole a silver hammer from Bram' -> '... from me' in Bram's own memory (not when Bram is the subject)."""
     first, sep, rest = text.partition(" ")
     name = re.escape(my_name)
@@ -189,7 +189,7 @@ def _as_me(text: str, my_name: str) -> str:
     return first + sep + re.sub(rf"\b{name}\b", "me", rest)
 
 
-def _lower_first(text: str) -> str:
+def lower_first(text: str) -> str:
     """'The merchant ...' -> 'the merchant ...' mid-sentence; names like 'Kai stole ...' stay as they are."""
     first, sep, rest = text.partition(" ")
     return first.lower() + sep + rest if first.lower() in {"the", "a", "an"} else text

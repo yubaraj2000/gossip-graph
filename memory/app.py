@@ -161,6 +161,23 @@ def case_file(world_id: str, case_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"no case {case_id!r}")
 
 
+@app.post("/worlds/{world_id}/cases/{case_id}/interview")
+def interview(world_id: str, case_id: str, target: str | None = None) -> dict:
+    """The active investigator interviews the next open lead (or `target`). Interviewees answer from their own
+    beliefs and name only their direct sources, which become new leads."""
+    _check_world_id(world_id)
+    try:
+        return cases.interview(world_id, case_id, target)
+    except cases.CaseNotFound:
+        raise HTTPException(status_code=404, detail=f"no case {case_id!r}")
+    except cases.CaseClosed as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except llm.LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 def _check_world_id(world_id: str) -> None:
     try:
         db.graph_name(world_id)

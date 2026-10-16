@@ -18,6 +18,10 @@ STALE_INGEST_MS = 10 * 60 * 1000
 # Claims this close to neutral are not gossip ("Lakshmi heard fascinating tales lately", valence 0.0). Recall ranks
 # by |valence|, so they would never surface anyway; dropping them keeps the graph readable.
 MIN_ABS_VALENCE = 0.15
+# Instructions and plans aren't claims about anyone ("Ask Meera about...", "I'll discreetly ask Sarla...").
+NOT_A_STATEMENT = re.compile(
+    r"^(ask|tell|let'?s|let|go|find|check|look|see|please|don'?t|i'?ll|i will|i'm going|we should|we need)\b",
+    re.IGNORECASE)
 # Forms of address dropped when matching names ("Pandit ji", "Gopal bhai", "Balwant Singh").
 HONORIFICS = {"ji", "bhai", "didi", "sahib", "saab", "baba", "kaka", "chacha", "singh", "mr", "mrs", "the"}
 # Predicates whose object must be a person; otherwise the claim is downgraded to "did".
@@ -224,7 +228,8 @@ def load_conversation(g: Graph, cid: str) -> ConversationIn | None:
         return None
 
 
-def _ingest(g: Graph, conv: ConversationIn) -> dict:
+def record_transcript(g: Graph, conv: ConversationIn) -> tuple[list[dict], list[str], float]:
+    """Store participants, messages and acquaintance for a conversation whose node already exists."""
     msgs = [{"id": f"{conv.id}:{i}", "idx": i, "author": m.author, "text": m.text, "ts": m.ts}
             for i, m in enumerate(conv.messages)]
     ts = msgs[-1]["ts"] if msgs else 0
@@ -233,6 +238,19 @@ def _ingest(g: Graph, conv: ConversationIn) -> dict:
                                 "started_at": msgs[0]["ts"] if msgs else None, "ended_at": ts})
     g.query(WRITE_MESSAGES, {"id": conv.id, "msgs": msgs})
     g.query(TOUCH_KNOWS, {"pairs": [[a, b] for a in ids for b in ids if a != b], "ts": ts})
+    return msgs, ids, ts
+
+
+def hear(g: Graph, listener: str, speaker: str, claim: str, msg_id: str, ts: float) -> float | None:
+    """Q1: the listener heard the claim from the speaker in message msg_id. Returns the listener's new
+    confidence, or None when a guard (echo / repeat) or a missing speaker belief stopped it."""
+    row = g.query(HEAR, {"listener": listener, "speaker": speaker, "claim": claim, "msg": msg_id,
+                         "ts": ts}).result_set
+    return row[0][0] if row else None
+
+
+def _ingest(g: Graph, conv: ConversationIn) -> dict:
+    msgs, ids, ts = record_transcript(g, conv)
     if not msgs:
         return {"summary": "", "claims": [], "beliefs": [], "dropped": []}
 
@@ -256,10 +274,9 @@ def _ingest(g: Graph, conv: ConversationIn) -> dict:
         for listener in ids:
             if listener in (c["speaker"], c["subject"]):  # nobody adopts a claim about themselves
                 continue
-            row = g.query(HEAR, {"listener": listener, "speaker": c["speaker"], "claim": c["id"],
-                                 "msg": msg["id"], "ts": msg["ts"]}).result_set
-            if row:
-                beliefs.append({"holder": listener, "claim": c["id"], "confidence": round(row[0][0], 3),
+            conf = hear(g, listener, c["speaker"], c["id"], msg["id"], msg["ts"])
+            if conf is not None:
+                beliefs.append({"holder": listener, "claim": c["id"], "confidence": round(conf, 3),
                                 "from": c["speaker"]})
     return {"summary": str(raw.get("summary") or ""), "claims": claims, "beliefs": beliefs, "dropped": dropped}
 
@@ -289,6 +306,9 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
             continue
         if subject is None:
             dropped.append({**rc, "reason": "unknown subject"})
+            continue
+        if NOT_A_STATEMENT.match(text):
+            dropped.append({**rc, "reason": "not a statement"})
             continue
         if not _names_person(text, id_to_name[subject]):
             dropped.append({**rc, "reason": "text does not name the subject"})
