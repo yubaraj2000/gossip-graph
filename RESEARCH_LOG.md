@@ -373,6 +373,114 @@ Harmless warning: Starlette's test client says `httpx` is deprecated in favor of
 
 **Data model doc:** added the `Claim.id` index, which the code uses.
 
+**✅ 2.3 Ingest: conversation → claims → beliefs** [AI]
+
+**Files:**
+- `memory/extract.py`: prompt plus a JSON-schema answer format, with an enum of 11 predicates.
+- `memory/llm.py`: Ollama `/api/chat` with `format` (structured output, temperature 0), and `/api/embed`.
+- `memory/ingest.py`: the pipeline.
+- `memory/models.py`: request bodies.
+- **Endpoints:** `POST /worlds/{id}/characters` and `POST /worlds/{id}/conversations`.
+
+**Embedding distances measured first** (mxbai-embed-large, against "Kai stole a silver hammer from Bram"):
+
+| Compared text | Distance |
+|---|---|
+| paraphrase | 0.089 |
+| looser paraphrase | 0.177 |
+| rumor mutation | 0.181 |
+| "Kai is a thief" | 0.172 |
+| **"Tom stole a silver hammer from Bram"** | **0.138** |
+| unrelated | 0.497 |
+| small talk | 0.679 |
+
+- **❌ Embeddings alone can't dedup:** a different *subject* scored closer than a real paraphrase.
+- **Decision:** structured key first; the vector fallback only for the same subject at < 0.10.
+
+**Extraction prompt, iteration 1 (live, `llama3.1:8b`):**
+- ✅ Got the theft, a trait, and the "fence" mutation as a separate `did` claim.
+- ❌ Object was "a silver hammer" instead of "Bram".
+- ❌ Junk claims ("Tom is looking stern", "the merchant …").
+- ❌ Valence −1 for everything.
+
+**Iteration 2:** added rules for person objects, skipping momentary looks and moods, and a valence scale.
+- ✅ Valence calibrated (troublemaker −0.2).
+- ❌ Still wrong objects, and a nonsense claim ("Tom likes rare spices" with copied first-person text).
+
+**Decision: enforce rules in code, not the prompt.** See `_validate`:
+- the subject must be known
+- the text must name the subject (kills copied-speech junk)
+- a person predicate with a non-person object takes the person named in the text, or else becomes `did`
+- valence is clamped
+
+**Rules added:**
+- **Atomic take:** `TAKE_CONVERSATION` moves status `new|failed → ingesting` in one query. AI Town sends each conversation once per NPC participant, so exactly one call ingests it.
+- **Echo guard:** no reinforcement from your own rumor coming back.
+- **Repeat guard:** the same speaker belief only counts once.
+- **No self-adoption:** a character never adopts a claim about themselves.
+- **KNOWS on first talk:** trust starts at the truster's gullibility.
+
+**Tests:** 20 pass, plus 1 opt-in live test that passes in 14 s (`RUN_LIVE=1 uv run pytest -k live`). The suite uses a scripted fake LLM and covers:
+- chain plus provenance: 0.6 → 0.54 → 0.432
+- idempotency (the extractor is called once)
+- echo guard
+- a second independent source: Tom 0.162 ⊕ 0.18 = 0.313
+- self-adoption
+- near-duplicate dedup
+- validation
+- the API
+
+**✅ End to end over HTTP with the real LLM** (world `demo`, kept for browsing):
+
+| Conversation | Result |
+|---|---|
+| Bram→Pip | Pip 54%. Pip's "troublemaker" trait went back to Bram at 30% (0.6 × Bram's gullibility 0.5). |
+| Pip→Mara | "Kai swiped his silver hammer" **merged into the same claim** via its key. Mara 43%. |
+| Mara→Tom | Tom only **13%** (gullibility 0.3), plus the separate "fence" mutation claim at 18%. |
+
+- Re-sending Mara→Tom returned `skipped` ✅
+- **Provenance:** `Tom ← Mara ← Pip ← Bram` ✅
+- **Speed:** 9–14 s per conversation (8b on CPU).
+- **Note:** the root origin is `self` because there was no narrator event. With step 3.3's narrator event it becomes `witnessed`.
+- 💡 **Idea:** an extraction flag for "speaker claims to have seen it first-hand" ("I saw him do it with my own two eyes"). It could be a lie, so keep it distinct from `witnessed`.
+
+### Oct 16 — "Does the pipeline break?" Robustness check of ingest (participant's request)
+
+**Probe:** a scratch script hitting the API with failures, concurrency and odd input. Results before the fixes:
+
+| Scenario | Before | After fix |
+|---|---|---|
+| Model gives `valence: "very bad"` | ❌ HTTP **422**, whole conversation lost | ✅ that claim dropped, others kept |
+| Model gives `message_index: "0"` or `"one"` | ❌ HTTP **500** crash | ✅ numeric strings accepted, junk dropped |
+| Model gives a claim as a plain string or `null` | ❌ HTTP **500** crash | ✅ dropped as "malformed claim" |
+| Model returns non-JSON | ❌ HTTP **422** (blames the caller) | ✅ **502** `LLMError`; transcript kept; status `failed` |
+| `claims` is not a list / embedding count mismatch | — | ✅ 502 |
+| Ollama down, then a resend | ✅ 502, then ingested | ✅ unchanged |
+| Same conversation ×8 at once | ✅ 1 ingested, 7 skipped, extractor called once | ✅ unchanged |
+| 30 conversations at once across 3 worlds | ✅ all ingested, 10 per world | ✅ unchanged |
+| Injection-shaped conversation id, emoji, quotes | ✅ stored as plain data | ✅ unchanged |
+| **Crash mid-ingest** | ❌ stuck in `ingesting` **forever**; resends say `skipped`; memory silently lost | ✅ see below |
+| Silent participant (never speaks) | ❌ not linked to the conversation (found while writing tests) | ✅ participants linked independently of messages |
+
+**Fixes:**
+- `memory/llm.py`: new `LLMError`, which wraps HTTP, JSON and shape errors plus embedding count checks.
+- `_validate`: parses one claim at a time (`_as_number`, `_text`).
+- **Stale lock:** `taken_at` is recorded, and a lock older than 10 minutes can be retaken.
+- **Startup recovery:** `ingesting` → `failed`.
+- **Retry loop** (FastAPI lifespan): rebuilds failed conversations from the stored transcript. It stops at the first model failure so it doesn't hammer a down model.
+- `POST /worlds/{id}/retry` for on-demand retries.
+
+**Tests:** 45 pass (+1 live, opt-in). `tests/test_robustness.py` has 25 cases. Shared fixtures moved to `tests/helpers.py` and `conftest.py`.
+
+**Live chaos test on the real service, tunnel and LLM** (world `chaos`, deleted afterwards):
+- ✅ **Tunnel cut mid-request:** HTTP 502 `chat failed: [Errno 61] Connection refused`; status `failed` with the reason saved. Tunnel back plus a resend: ingested, Pip 54%.
+- ⚠️ **First crash attempt was invalid:** `pkill -f "uvicorn memory.app:app"` only killed the `--reload` *parent*. The worker (a child process with a different command line) finished the request (HTTP 200), then held port 8100, so the restart failed with exit code 3. **To really stop the service, kill the port's listener:** `lsof -ti tcp:8100 | xargs kill`.
+- ✅ **Real crash:** `kill -9` of a single-process service mid-ingest. The client got an empty reply (curl exit 52), and the conversation was stuck at `ingesting`.
+  - After restart, the log said `1 interrupted conversation(s) marked failed for retry`.
+  - About 20 s later: `retried c:3 -> ingested`, **with no resend by anyone**.
+- **FalkorDB gotcha:** `count{(c)<-[:IN]-(:Message)}` (a COUNT subquery) is not supported (`Invalid input '('`). Use `OPTIONAL MATCH` + `count()`.
+- **Assumption, documented in `app.py`:** a single service process, because startup recovery treats every `ingesting` as interrupted.
+
 ---
 
 ## Open questions

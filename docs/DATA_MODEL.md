@@ -80,8 +80,36 @@ graph LR
 - **Hearing:** when A tells B a claim, B's incoming confidence is `confidence(A's belief) × trust(B→A)`. If B has no `KNOWS` edge to A, the trust is **B's `gullibility`**, the personality trait: suspicious Tom has 0.3, gossipy Mara has 0.7. If that isn't set either, the trust is `0.5`.
 - **Hearing again from another source:** the beliefs combine as `1 − (1 − old)(1 − incoming)`, and a second `HEARD_FROM` edge is added. More independent sources make a belief more certain.
 - **Inventing:** if a speaker asserts a claim it has no belief for, the speaker gets a belief with `origin = 'self'` and confidence 0.6. This is how rumors and lies are born, and `explain` shows that they have no witness.
-- **Idempotency:** AI Town calls "remember conversation" **once per NPC participant**. Ingest therefore checks `Conversation.ingested` and processes each conversation only once.
-- **Claim dedup:** first an exact `key` match, then vector similarity on `Claim.embedding` among claims about the same subject. FalkorDB's vector `score` is a **distance** (lower means closer); verified: 0.001 for a near-duplicate, 0.947 for an unrelated claim.
+- **Idempotency:** AI Town calls "remember conversation" **once per NPC participant**. A single query atomically moves `Conversation.status` from `new` (or `failed`) to `ingesting`. Queries on one graph run one at a time, so exactly one caller wins and the other gets `skipped`.
+- **Echo guard:** hearing your own rumor back adds nothing. If the speaker's belief is downstream of the listener's (`(sb)-[:HEARD_FROM*1..8]->(listener's belief)`), it's skipped.
+- **Repeat guard:** hearing the same claim again from the *same* speaker belief doesn't raise confidence. Only independent sources do.
+- **No self-adoption:** a character never adopts a claim about themselves.
+- **Acquaintance:** talking creates `KNOWS` edges in both directions. On first contact, trust is the truster's `gullibility`.
+- **Failure handling:**
+  - The transcript is stored *before* the LLM step, so the episode is never lost.
+  - A model failure returns HTTP 502 and leaves status `failed`.
+  - Claims are parsed one at a time, so a malformed claim is dropped without losing the others.
+  - At service start, leftover `ingesting` conversations (from a crash) are marked `failed`.
+  - A retry loop (every `RETRY_INTERVAL_S`, default 60 s, only while Ollama is reachable) rebuilds failed conversations from the stored transcript and ingests them again. `POST /worlds/{id}/retry` does the same on demand.
+  - A lock older than 10 minutes can also be retaken by a resend.
+- **Validation in code** (the 8b model doesn't reliably follow the prompt):
+  - the subject must be a known character
+  - the claim text must name the subject
+  - for person predicates, a non-person object is replaced by the other person named in the text; if there is none, the predicate becomes `did`
+  - valence is clamped to −1…1
+- **Claim dedup:**
+  - First an exact `key` match.
+  - Then vector similarity on `Claim.embedding`, **only among claims about the same subject**, with distance < **0.10**. FalkorDB's vector `score` is a cosine **distance** (lower means closer).
+  - mxbai-embed-large distances from "Kai stole a silver hammer from Bram":
+
+    | Compared text | Distance |
+    |---|---|
+    | "Kai swiped Bram's silver hammer" (paraphrase) | 0.089 → merged |
+    | looser paraphrase | 0.177 |
+    | the "fence" rumor mutation | 0.181 |
+    | "Tom stole a silver hammer from Bram" (different subject!) | 0.138 |
+
+  - So embeddings alone cannot be trusted: the key comes first, and the vector check is always filtered by subject.
 
 ## Core queries (all verified)
 
