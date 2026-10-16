@@ -64,7 +64,7 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
   - Nodes: `NPC`, `Player`, `Location`, `Event`, `Conversation`, `Message`, `Belief`, `Task`
   - Relationships: `KNOWS {trust}`, `HELD_BY`, `ABOUT`, `FROM`, `WITNESSED`, `PARTICIPATED_IN`
   - Time fields on beliefs so they can be marked outdated instead of deleted
-- [ ] **2.2** Create the Python service (`memory/`, FastAPI): config, FalkorDB client, one graph per world (`world_<id>`).
+- [x] **2.2** Create the Python service (`memory/`, FastAPI): config, FalkorDB client, one graph per world (`world_<id>`).
 - [ ] **2.3** **Ingest**: take a finished conversation and use `llama3.1:8b` with a JSON schema to extract claims ("who said what about whom"). Turn them into `Belief` nodes that record their source and trust.
 - [ ] **2.4** **Recall**: given an NPC and the person they're talking to, return the beliefs about that person with confidence and source, shared past episodes, and a reputation score.
 - [ ] **2.5** **Explain**: return the provenance path for any belief ("who told you that?").

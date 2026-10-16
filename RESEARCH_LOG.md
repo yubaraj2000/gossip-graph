@@ -27,6 +27,10 @@ Newest entries go at the bottom of each section.
 | Oct 16 | LLM: **Ollama on the Ubuntu box** (CPU), reached from the Mac via an SSH tunnel on port 11435 | Free and unlimited, and the models are already installed; free API tiers are too small for constant NPC chatter. Keeps the Mac's 16 GB free for Docker. | Free API tiers (Groq, Gemini, OpenRouter); Ollama on the Mac |
 | Oct 16 | **Git is done by the participant**: Claude provides the commands and commit messages, and never runs git | The participant owns the repo history, which is the evidence for rule 8 | Claude running git |
 | Oct 16 | **GO on AI Town** as the base world | Phase 1 test: every part works; about 8 s per NPC reply; the Mac has memory headroom | Plan B (Python village from scratch) |
+| Oct 16 | Data model: **fixed claim vocabulary** with a free-text and vector-dedup fallback | Reliable dedup, and reputation can be counted by claim type | Free text only; open triples |
+| Oct 16 | Trust: **fixed confidence rules plus a per-character `gullibility`**, used as the default trust for strangers | Nearly free to add, and NPCs feel different (suspicious guard, gossipy innkeeper) | Learned trust, forgetting and LLM-judged wording, all deferred |
+| Oct 16 | Store **every message** | Keeps 'the exact line where you heard it'; storage is trivial (see the scale test) | Summaries only; claim lines only |
+| Oct 16 | Multi-village plan: **1 live AI Town village plus 2–3 background villages** fed by replayed conversations, plus a concurrency load test | The DB cost is negligible, but CPU LLM throughput is shared, so a second live village would halve the chatter | Two live AI Town worlds |
 
 ---
 
@@ -296,6 +300,78 @@ Go/no-go is the participant's call [me].
   - **Fix:** relevance weighting instead of a filter (2 if about the listener, 1.5 if about someone the listener knows, 1 otherwise), giving `score = confidence × |valence| × relevance`.
 - **❌ FalkorDB gotcha:** `CASE WHEN (s)<-[:KNOWS]-(...)` fails with `Invalid input Colon`. Pattern predicates only work in `WHERE`. **Fix:** `OPTIONAL MATCH ... count(kk) > 0`. After the fix, recall returns both the Kai theft (score 0.58) and the rumor about Tom (0.58) ✅
 - **AI Town detail:** `rememberConversation` is called **once per NPC participant**, so ingest is made idempotent with `Conversation.ingested`.
+
+**🔬 Live gossip preview: real LLM dialogue plus graph memory** [AI]
+
+Throwaway script in Claude's scratchpad, not project code. It left the graph `preview_gossip` in FalkorDB for browsing.
+
+**Setup:**
+- 4 NPCs (Bram, Pip, Mara, Tom) plus Kai, using `llama3.2:3b` on Ubuntu.
+- Each NPC's prompt includes its recall (Q2) from the graph.
+- After each line, a stand-in for step 2.3 extraction: if the speaker mentions Kai, the listener gets the belief via Q1.
+
+**Findings:**
+- **❌ Run 1:** with a generic prompt ("share your most interesting news"), Mara **ignored her memory and invented a different rumor** (spices at the port). The chain stopped at Mara.
+  - **Lesson:** small models drift from the provided context, and NPCs invent gossip on their own.
+  - Step 2.3 extraction must capture invented claims as `origin='self'`, so made-up rumors also become traceable.
+- **✅ Run 2:** with a grounded prompt ("tell the most interesting item from the list above … do not invent other news"), the full chain spread: Bram → Pip 90% → Mara 72% → Tom 43%.
+  - Q4 explain returned **`Tom ← Mara ← Pip ← Bram`**, rooted in Bram's witnessed event ✅
+- **⚠️ The LLM garbles provenance when it paraphrases.** Given the exact chain, Tom (3B) still said "It was Bram I spoke to first".
+  - **Lesson:** show "who told you" from the graph path verbatim (UI or template), and let the LLM add flavor only. Or use 8b for that answer.
+- **💡 Rumors mutate.** Mara embellished it to "Kai was spotted trying to fence a stolen silver hammer".
+  - Extraction should store this as a **new related claim** that is `HEARD_FROM` the original: "rumor mutation" as a demo feature.
+- **❌ → ✅ FalkorDB gotcha:** `'Bram''s forge'` ('' quote-escaping) fails with `Encountered unhandled type in inlined properties`. Use double quotes or (better) query parameters.
+- **Speed:** 3–19 s per two-line exchange, and 42 s for the first one (cold model load).
+
+**✅ Scale and cost test for multiple villages** [AI]
+
+Simulated "busy day" village on the temp graph `__scale_day`, deleted afterwards: 10 NPCs, 300 conversations, 3,000 messages, 400 claims, 3,000 beliefs, 4,110 nodes in total.
+
+| Measurement | Result |
+|---|---|
+| FalkorDB memory (`GRAPH.MEMORY USAGE`) | about **1 MB** per busy-day village; the 15-node preview graph reports 0 MB |
+| Recall (Q2) latency, 50 random runs | **0.4 ms median**, 0.5 ms p95 |
+| `GRAPH.COPY` of the whole village | **12 ms** |
+| Money | $0 (everything is local) |
+
+- **The bottleneck is LLM throughput, not the database.** Ollama on the Ubuntu CPU takes about 8 s per NPC line and serves requests one at a time. Extraction calls share the same capacity.
+- **Implication:** extra villages are free in FalkorDB. Running them *live* would divide the chatter rate.
+
+**✅ Gullibility trait verified** [AI]
+- Q1 now uses `coalesce(k.trust, lis.gullibility, 0.5)`.
+- A stranger's news (confidence 1.0) lands at 0.7 for Mara (gullibility 0.7), 0.3 for Tom (0.3), and 0.5 when the trait is unset.
+
+**✅ 2.2 Memory service skeleton (`memory/`, FastAPI)** [AI]
+
+**Files:**
+- `memory/config.py`: settings from environment variables (FalkorDB host and port, `OLLAMA_URL`, embedding dimension 1024).
+- `memory/db.py`:
+  - one graph per world (`world_<id>`)
+  - world ids validated against `[A-Za-z0-9_-]{1,64}` before reaching Cypher
+  - `ensure_schema()` creates only the missing indexes: 8 range indexes plus the `Claim.embedding` 1024-d cosine vector index
+- `memory/app.py`: `GET /health`, `GET /worlds`, `POST /worlds/{id}` (idempotent).
+
+**FalkorDB behaviors found:**
+- Creating an existing index fails with `Attribute 'id' is already indexed`, so we check `CALL db.indexes()` first.
+- `db.indexes()` on a graph that was never written fails with `Invalid graph operation on empty key`, so we check `list_graphs()` first.
+
+**Tests:** 12 of 12 pass (`uv run pytest`), against the real FalkorDB with throwaway graphs. They cover:
+- unsafe ids rejected, including a Cypher-injection-shaped id
+- idempotent schema creation
+- vector index present
+- world isolation (same `p:1` id, different worlds)
+- the API endpoints
+
+Harmless warning: Starlette's test client says `httpx` is deprecated in favor of `httpx2`.
+
+**Running:**
+- `uv run uvicorn memory.app:app --host 127.0.0.1 --port 8100`
+- `/health` returns `{"falkordb":true,"ollama":"0.30.10"}` **from the Mac and from inside the Convex container** (`host.docker.internal:8100`) ✅
+- Created the live AI Town world's graph `world_m177e3zakbq26txfhjmd8mtb0s8ga9ef` with 9 indexes. A second call created nothing ✅
+
+**Tunnel:** `scripts/ollama-tunnel.sh watch` reopens the tunnel every 20 s if Ollama is unreachable, which fixes the drop after the Mac sleeps.
+
+**Data model doc:** added the `Claim.id` index, which the code uses.
 
 ---
 
