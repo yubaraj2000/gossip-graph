@@ -31,6 +31,9 @@ Newest entries go at the bottom of each section.
 | Oct 16 | Trust: **fixed confidence rules plus a per-character `gullibility`**, used as the default trust for strangers | Nearly free to add, and NPCs feel different (suspicious guard, gossipy innkeeper) | Learned trust, forgetting and LLM-judged wording, all deferred |
 | Oct 16 | Store **every message** | Keeps 'the exact line where you heard it'; storage is trivial (see the scale test) | Summaries only; claim lines only |
 | Oct 16 | Multi-village plan: **1 live AI Town village plus 2–3 background villages** fed by replayed conversations, plus a concurrency load test | The DB cost is negligible, but CPU LLM throughput is shared, so a second live village would halve the chatter | Two live AI Town worlds |
+| Oct 16 | **Investigator agent becomes the Phase 4 centerpiece** (proposed by [me], shaped with [AI]) | One scene covers every Track 2 focus: memory surviving a crash, handoff and shared state through the case file, episodic interviews, semantic verdicts, and memory updates via debunking. The graph does real work: planning interviews and proving the verdict. | The generic guard-captain task handoff; procedural memory |
+| Oct 16 | **Minds are private:** the investigator sees only the social structure and must interview to learn beliefs | Makes "agents really remember" provable instead of an omniscient query | Letting the investigator read all beliefs directly |
+| Oct 16 | **Include debunking:** published verdicts mark debunked beliefs `superseded` (never deleted), and trust in the originator drops | The "a new agent can come and fix everything" story | Stopping at the verdict |
 
 ---
 
@@ -559,6 +562,84 @@ One expectation of mine had a rounding error (0.26 vs 0.259). I fixed the test, 
 - Tom on the theft: *"Mara told me. Mara heard it from Pip, who heard it from Bram. Bram started it, and nobody saw it happen."*
 - Mara on the fence rumor: *"Nobody told me; I said it first."* Correct: Mara invented the "fence" twist.
 - **Latency:** 200 HTTP calls, **2.0 ms median**, 2.5 ms p95.
+
+**✅ 2.6 Prototype story end to end through the HTTP API: `tests/test_scenario.py`** [AI]
+
+**Flow:** characters via the API, with the prototype's trust as gullibility (Pip 0.9, Mara 0.8, Tom 0.6). The witnessed theft is seeded (a stand-in for the 3.3 narrator). Then the 3 real preview conversations go through `POST /conversations`.
+
+**Checks, all reproducing the prototype:**
+
+| Check | Result |
+|---|---|
+| Chain | Pip **0.90**, Mara **0.72**, Tom **0.432** |
+| Grudge against Kai (−confidence × valence) | Bram 1.0, Pip 0.9, Mara 0.72, Tom 0.432 (via recall) |
+| Explain path | Tom ← Mara ← Pip ← Bram, verdict `witnessed`, sentence "… Bram saw it happen." |
+| Resend | `skipped`, numbers unchanged |
+| Scripted extra: Bram tells Tom directly | Tom = 1 − (1 − 0.432)(1 − 0.6) = 0.773; sentence "Bram told me. Bram saw it happen. I also heard it from Mara." |
+
+**Live version** (`RUN_LIVE=1`, real `llama3.1:8b` on the real dialogue): **3/3 runs passed**, at 49 s, 41 s and 41 s. Extraction was stable enough that every conversation's theft claim merged into the witnessed claim by key. That includes "Kai swiped his silver hammer", which never names Bram.
+
+- Test helper `seed_witnessed_theft` moved to `tests/helpers.py`.
+- **Suite:** 61 pass, plus 2 opt-in live tests.
+
+**Phase 2 build steps (2.1–2.6) are complete.** Next: the Phase 2 review checkpoint with the participant.
+
+### Oct 16 — Investigator concept (from the participant's idea)
+
+**💡 → approved.**
+
+**Idea [me]:**
+- A new NPC investigator who knows nothing solves a case by asking other NPCs, to show that agents really remember.
+- **Production analogy:** if an agent crashes, a new agent can come in and recover everything by itself from the shared memory.
+- Take Graphify as the reference.
+
+**What Graphify does** (from `reference/graphify`: README, `AGENTS.md`, `analyze.py`, `report.py`):
+- Builds the graph once, so agents query it instead of re-reading files.
+- `GRAPH_REPORT.md` for orientation: "God Nodes (most connected)", communities (Leiden), surprising connections.
+- `suggest_questions()`:
+
+  | Graph signal | Question it generates |
+  |---|---|
+  | AMBIGUOUS edges | "What is the exact relationship between …?" |
+  | bridge nodes (betweenness) | "Why does X connect A to B?" |
+  | god nodes with many INFERRED edges | "Are these inferred relationships correct?" |
+  | isolated nodes | "What connects them?" |
+
+- Edge confidence: EXTRACTED / INFERRED / AMBIGUOUS.
+- Agent rule: "use the report for broad orientation, scoped queries for specifics".
+
+**Mapping to the village:**
+
+| Graphify | Village |
+|---|---|
+| Report | Case briefing (hubs via PageRank on `LEARNED_FROM`, bridges via betweenness, cliques via label propagation) |
+| Suggested questions | Leads ("who told you?" points upstream; unverified claims lead to "who started this?") |
+| EXTRACTED / INFERRED / AMBIGUOUS | `witnessed` / `heard` / `self` |
+
+**Plan updated (`PLAN.md` Phase 4):**
+- 4.1 case file and briefing
+- 4.2 lead planner
+- 4.3 interview loop
+- 4.4 crash and resume
+- 4.5 verdict and debunking
+- 4.6 light separate villages
+- 4.7 stretch: walking in AI Town
+- **Dropped:** procedural memory and the load test.
+- **New scope cut order:** walking in AI Town → background villages → custom panels → the trust drop.
+
+### Oct 16 — Phase 2 review checkpoint
+
+**🔬 Started. Wrote `docs/WALKTHROUGH.md`** [AI]
+
+A plain-language tour, reviewed section by section with the participant [me]:
+1. The big picture (the AI is used in only 2 places)
+2. The graph model (Event / Claim / Belief, explained with a newspaper analogy; the confidence math with the step 2.6 numbers)
+3. Ingest, step by step
+4. Q1, Q2 and Q4 annotated line by line
+5. Failure handling and the bugs found
+6. Judge-style practice questions with answers
+
+It's reusable for the README and the demo script.
 
 ---
 

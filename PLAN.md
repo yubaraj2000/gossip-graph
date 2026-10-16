@@ -68,7 +68,7 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 - [x] **2.3** **Ingest**: take a finished conversation and use `llama3.1:8b` with a JSON schema to extract claims ("who said what about whom"). Turn them into `Belief` nodes that record their source and trust.
 - [x] **2.4** **Recall**: given an NPC and the person they're talking to, return the beliefs about that person with confidence and source, shared past episodes, and a reputation score.
 - [x] **2.5** **Explain**: return the provenance path for any belief ("who told you that?").
-- [ ] **2.6** Tests: a scripted scenario must reproduce the prototype results (the Bram → Pip → Mara chain, grudge scores).
+- [x] **2.6** Tests: a scripted scenario must reproduce the prototype results (the Bram → Pip → Mara chain, grudge scores).
 
 **Done when:** the tests pass and every endpoint works with `curl`. **Review checkpoint.**
 
@@ -85,20 +85,26 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 
 ---
 
-## Phase 4 — Track 2 depth (ordered by value; cut from the bottom if behind)
+## Phase 4 — Track 2 depth: the Investigator (centerpiece, approved Oct 16)
 
-- [ ] **4.1 Memory updates:** a new event ("Kai returned the item") marks old beliefs outdated instead of deleting them, and NPCs say "I heard you stole, but also that you made it right."
-- [ ] **4.2 Graph algorithms as gameplay:**
-  - betweenness finds the "bridge" gossips
-  - PageRank on `HEARS_FROM` finds the influencers
-  - label propagation finds the cliques
+A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's silver hammer is missing") by interviewing villagers. It shows that agents really remember via the graph, that a **replacement agent resumes from the graph after a crash**, and that the village's memory can be **corrected** without deleting history. The pattern is borrowed from Graphify, which orients a cold coding agent from a graph report plus scoped queries instead of re-reading everything.
 
-  These go in an Insights endpoint, plus the "bribe the bridge and the rumor stops" demo.
-- [ ] **4.3 Separate worlds and concurrency:** create a world by cloning a template village with `GRAPH.COPY`, run 2 worlds at once, and use a load script to show parallel writes.
-- [ ] **4.4 Agent coordination and handoff:** the guard captain creates a `Task` ("investigate the theft") in the graph, and a guard NPC picks it up and reports back.
-- [ ] **4.5 Procedural memory (stretch):** NPCs learn behavior rules from events (e.g. the merchant raises prices above a grudge threshold).
+**Rule — minds are private.** The investigator may query the *social structure* (`KNOWS`, `LEARNED_FROM`, who talked to whom) but never other characters' beliefs. It learns beliefs only through interviews, which is what makes "the NPCs really remember" provable.
 
-**Done when:** at least 4.1–4.3 work. **Review checkpoint.**
+- [ ] **4.1 Case file in the graph:** `Case`, leads, interviews and findings, written after every step so a replacement can resume. Plus a **briefing**, our version of Graphify's `GRAPH_REPORT.md`, computed from public structure:
+  - gossip hubs (PageRank on `LEARNED_FROM`)
+  - bridges (betweenness)
+  - cliques (label propagation)
+- [ ] **4.2 Lead planner:** the next interviewee comes from the graph. Start at hubs and bridges, then follow each "who told you?" answer upstream until reaching a witness, or until leads run out.
+- [ ] **4.3 Interview loop:** templated questions from the investigator. NPC answers are grounded in that NPC's own recall and explain. Interviews are ingested like any conversation, so the investigator builds its own beliefs with provenance.
+- [ ] **4.4 Crash and resume:** kill investigator #1 mid-case. Investigator #2 (knows nothing) reads the case file and finishes **without re-interviewing**.
+- [ ] **4.5 Verdict and debunking:** a report with the evidence chain, e.g. "the theft is witnessed; the 'fence' story was invented by Mara". Publishing it marks believers' copies of debunked claims `superseded` (with `valid_to` and an edge to the verdict; never deleted), and listeners' trust in the rumor's originator drops.
+- [ ] **4.6 Separate villages (light):** one live village plus 1–2 background villages fed by replayed conversations, and an isolation check (Kai is a thief in one, a stranger in another).
+- [ ] **4.7 Stretch:** the investigator walks and talks visibly in AI Town instead of only in the service.
+
+**Dropped for scope:** procedural memory (NPCs learning behavior rules) and the concurrency load test (the robustness tests already cover concurrent ingest).
+
+**Done when:** 4.1–4.5 work end to end, including the crash and resume. **Review checkpoint.**
 
 ---
 
@@ -107,6 +113,7 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 - [ ] **5.1** A graph panel next to the town showing beliefs appearing as gossip spreads (or the FalkorDB Browser if time is short).
 - [ ] **5.2** "Why do you think that?" highlights the provenance path.
 - [ ] **5.3** An Insights panel: bridges, influencers, cliques, reputation per NPC.
+- [ ] **5.4** A case board: the investigator's briefing, leads (open/done), interviews and verdict, updating live.
 
 ---
 
@@ -121,7 +128,12 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
   - credit to AI Town
   - **AI-assistant disclosure**
   - track: Agent Memory and Coordination
-- [ ] **6.3** Demo video (about 3 minutes, script first): theft, then gossip spreading on the graph, "who told you?", bribing the bridge, two worlds side by side.
+- [ ] **6.3** Demo video (about 3 minutes, script first):
+  1. the theft, and gossip spreading on the graph
+  2. "who told you?"
+  3. **the investigator arrives, interviews, crashes, gets replaced, resumes, and reaches a verdict**
+  4. the village's memory is corrected
+  5. separate villages
 - [ ] **6.4** [me] Submit on WeMakeDevs with the repo link, video and track.
 - [ ] **6.5** Optional: blog post for the AirPods side prize, drafted from `RESEARCH_LOG.md`.
 
@@ -135,16 +147,16 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 |---|---|
 | Oct 16 morning | Phase 0 wrap-up, then Phase 1 test and the go/no-go decision |
 | Oct 16 afternoon and evening | Phase 2 |
-| Oct 17 | Phase 3, then Phase 4.1–4.3 |
-| Oct 18 until 14:00 | Phase 4 leftovers, Phase 5 → **feature freeze** |
+| Oct 17 | Phase 3, then Phase 4.1–4.4 (investigator up to crash and resume) |
+| Oct 18 until 14:00 | Phase 4.5–4.6, Phase 5 → **feature freeze** |
 | Oct 18 14:00–21:00 | Phase 6 → **submit** |
 
 ## Scope cuts if we fall behind (in this order)
 
-1. Procedural memory (4.5)
-2. Agent handoff (4.4)
-3. Custom graph panel (5.1–5.3). Use the FalkorDB Browser instead.
-4. The two-worlds concurrency demo (4.3). Keep separate worlds, drop the load test.
+1. Investigator walking visibly in AI Town (4.7). Run it from the service, with a log and case-board view.
+2. Background villages (4.6). Keep only the isolation check.
+3. Custom graph panels (5.1–5.4). Use the FalkorDB Browser instead.
+4. The trust drop in debunking (part of 4.5). Keep superseding the debunked beliefs.
 
 ## Risks
 
@@ -155,4 +167,5 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 | The small model extracts claims badly | `llama3.1:8b` with a strict JSON schema, validation, and tests on fixed transcripts |
 | The graph looks like decoration (rule 3) | Delete AI Town's vector memory; every recall goes through Cypher |
 | Our original work is unclear to judges | README credits; the research log separates AI Town from our code; git history |
+| Investigator scope (about 8–11 h) squeezes Phases 5 and 6 | Build the minimum version in the service first; walking in AI Town is a stretch; feature freeze at 14:00 Oct 18 is fixed |
 | The tunnel to Ubuntu drops | SSH keep-alive options, and a script to reopen it |
