@@ -28,13 +28,7 @@ const TablesToVacuum: TableNames[] = [
   // replay from a certain time period. Or stop vacuuming inputs and replay from
   // the beginning of time
   'inputs',
-
-  // We can keep memories without their embeddings for inspection, but we won't
-  // retrieve them when searching memories via vector search.
-  'memories',
-  // We can vacuum fewer tables without serious consequences, but the only
-  // one that will cause issues over time is having >>100k vectors.
-  'memoryEmbeddings',
+  // gossip-graph: the 'memories' and 'memoryEmbeddings' tables were removed (memory lives in FalkorDB).
 ];
 
 export const vacuumOldEntries = internalMutation({
