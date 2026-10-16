@@ -1,28 +1,15 @@
 """Explain ("who told you that?") against real FalkorDB: paths, the line heard at each hop, answer sentences."""
 from fastapi.testclient import TestClient
 
-from memory import db, explain, ingest
+from memory import explain, ingest
 from memory.app import app
-from tests.helpers import THEFT, two_way
+from tests.helpers import THEFT, seed_witnessed_theft, two_way
 
 THEFT_TEXT = "Kai stole a silver hammer from Bram"
 
 
 def belief(r, text):
     return next(b for b in r["beliefs"] if b["text"] == text)
-
-
-def seed_witnessed_theft(world_id):
-    """What the step 3.3 narrator will do: a real event, a grounded claim, and Bram's eyewitness belief."""
-    db.world_graph(world_id).query("""
-        MATCH (kai:Character {id:'p:9'}), (bram:Character {id:'p:1'})
-        CREATE (e:Event {id:'e1', kind:'stole_from', description:'Kai stole a silver hammer from Bram', ts:0}),
-               (kai)-[:DID]->(e), (e)-[:AGAINST]->(bram), (bram)-[:WITNESSED]->(e),
-               (c:Claim {id:'k_seed', key:'p:9|stole_from|p:1', predicate:'stole_from', object:'p:1',
-                         text:'Kai stole a silver hammer from Bram', valence:-1.0}),
-               (c)-[:ABOUT]->(kai), (c)-[:REFERS_TO]->(e),
-               (b:Belief {holder:'p:1', claim:'k_seed', confidence:1.0, origin:'witnessed', status:'active'}),
-               (b)-[:HELD_BY]->(bram), (b)-[:OF]->(c), (b)-[:SAW]->(e)""")
 
 
 def test_full_chain_with_the_line_heard_at_each_hop(gossip):
