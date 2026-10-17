@@ -2,6 +2,7 @@
 from fastapi.testclient import TestClient
 
 from memory import db, ingest
+from tests.helpers import THEFT, two_way
 from memory.app import app
 from memory.models import CharacterIn
 
@@ -28,8 +29,24 @@ def test_the_feed_says_who_heard_what_from_whom(gossip):
     tom = next(b for b in feed if b["holder_name"] == "Tom" and b["text"] == "Kai stole a silver hammer from Bram")
     assert (tom["origin"], tom["from_name"]) == ("heard", "Mara")
     assert tom["line"] == "Kai stole it and tried to fence it!"
-    assert feed == sorted(feed, key=lambda b: -b["at"])  # newest first
-    assert graph(gossip, since=max(b["at"] for b in feed))["feed"] == []  # only what's new since the last poll
+    assert feed == sorted(feed, key=lambda b: -b["recorded_at"])  # newest first, by when it entered the graph
+    assert graph(gossip, since=graph(gossip)["now"])["feed"] == []  # only what's new since the last poll
+
+
+def test_the_feed_never_skips_a_conversation_extracted_late(village):
+    """Seen in the Oct 17 recording run: two conversations finished extraction out of order, and Chotu's belief,
+    said earlier but recorded later, never reached the feed because it was polled by when things were said."""
+    world_id, scripted, _ = village
+    scripted["late"] = [{"message_index": 0, **THEFT}]
+    scripted["early"] = [{"message_index": 0, **THEFT}]
+    later = two_way("late", "p:1", "p:2", "Kai stole my silver hammer!")
+    for m in later.messages:
+        m.ts += 60_000  # said a minute later...
+    ingest.ingest_conversation(world_id, later)  # ...but extracted first
+    since = graph(world_id)["now"]
+    ingest.ingest_conversation(world_id, two_way("early", "p:2", "p:3", "Kai stole Bram's hammer!"))
+    new = graph(world_id, since=since)["feed"]
+    assert [(b["holder_name"], b["from_name"]) for b in new if b["origin"] == "heard"] == [("Mara", "Pip")]
 
 
 def test_silent_strangers_are_left_off_the_map(gossip):

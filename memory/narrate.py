@@ -33,7 +33,7 @@ UNWIND $witnesses AS wid
 MATCH (w:Character {id: wid}), (c:Claim {id: $claim}), (e:Event {id: $event})
 MERGE (w)-[:WITNESSED]->(e)
 MERGE (b:Belief {holder: wid, claim: $claim})
-ON CREATE SET b.created_at = $ts, b.status = 'active'
+ON CREATE SET b.created_at = $ts, b.status = 'active', b.recorded_at = timestamp()
 SET b.confidence = 1.0, b.origin = 'witnessed'
 MERGE (b)-[:HELD_BY]->(w)
 MERGE (b)-[:OF]->(c)

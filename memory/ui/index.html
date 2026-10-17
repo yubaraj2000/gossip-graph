@@ -12,7 +12,8 @@
     --bad: #e06c5a; --good: #7cc47f; --flash: #fff3a0; --dim: #4d3a2e;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, sans-serif;
+         height: 100vh; display: flex; flex-direction: column; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px;
            border-bottom: 2px solid var(--line); background: var(--panel); }
   h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
@@ -27,7 +28,7 @@
           margin-right: 6px; }
   .live.off { background: var(--bad); }
   main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px; padding: 12px 16px;
-         height: calc(100vh - 56px); }
+         flex: 1; min-height: 0; }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex;
             flex-direction: column; min-height: 0; }
   section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
@@ -115,8 +116,9 @@
   #why ol { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
   #why li { margin-bottom: 4px; }
   #why .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } #graph { height: 60vh; }
-                              #feed { max-height: 50vh; } }
+  /* Narrow (e.g. half a screen, for recording next to the town): map on top, side panel below, both always visible.
+     Every box keeps a definite height: a map sized by its own content makes vis-network resize itself in a loop. */
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -235,7 +237,7 @@ function render(data) {
   const showNews = document.getElementById('show-news').checked;
   const showFriends = document.getElementById('show-friends').checked;
   const arrived = data.characters.some(c => !nodes.get(c.id));
-  nodes.update(data.characters.map(nodeFor));
+  updateChanged(nodes, data.characters.map(nodeFor));
   // Lay out a newly loaded village, or make room for someone new (e.g. an investigator joining the case);
   // physics stops again once it settles (see 'stabilized' in start()).
   if (arrived) network.setOptions({ physics: { enabled: true } });
@@ -267,12 +269,22 @@ function render(data) {
   }
   const wantIds = new Set(want.map(e => e.id));
   edges.remove(edges.getIds().filter(id => !wantIds.has(id) && !/^(flash|path|case):/.test(String(id))));
-  edges.update(want);
+  updateChanged(edges, want);
 
   const t = data.totals;
   document.getElementById('totals').replaceChildren(
     ...[['beliefs', 'active beliefs'], ['outdated', 'outdated'], ['claims', 'claims'], ['conversations', 'conversations']]
       .map(([k, label]) => { const c = el('span', 'chip'); c.append(el('b', null, t[k]), ` ${label}`); return c; }));
+}
+
+// DataSet.update redraws the canvas even when nothing changed; on every 3 s poll that adds up (and costs GPU next to
+// the town), so only send items that differ from what's drawn.
+function updateChanged(set, items) {
+  const changed = items.filter(it => {
+    const cur = set.get(it.id);
+    return !cur || Object.keys(it).some(k => JSON.stringify(it[k]) !== JSON.stringify(cur[k]));
+  });
+  if (changed.length) set.update(changed);
 }
 
 function feedItem(b, fresh) {
@@ -328,7 +340,7 @@ async function poll() {
     if (tab === 'insights' && !person && Date.now() - insightsAt > INSIGHTS_MS) loadInsights();
     if (tab === 'case' && !person) loadCase();
     addFeed(data.feed, first);
-    since = data.feed.length ? Math.max(since ?? 0, ...data.feed.map(b => b.at)) : (since ?? data.now);
+    since = data.now;  // the server's clock before it read the feed: nothing recorded after it can be missed
     live.classList.remove('off'); live.title = 'live';
   } catch (e) {
     live.classList.add('off'); live.title = String(e);
@@ -664,7 +676,9 @@ function start() {
   // Lay the village out once, then hold still so new gossip doesn't make the map jump. ('stabilized' fires when the
   // layout settles after nodes are added; 'stabilizationIterationsDone' only covers data present at construction.)
   network.on('stabilized', () => { network.setOptions({ physics: { enabled: false } }); network.fit(); });
-  network.on('resize', () => network.fit());  // e.g. the legend wrapping onto a second line shrinks the map
+  // Refit when the map's box changes size (e.g. the legend wrapping), debounced so a resize can't drive a redraw loop.
+  let refit = null;
+  network.on('resize', () => { clearTimeout(refit); refit = setTimeout(() => network.fit(), 250); });
   network.on('click', e => {
     if (e.nodes.length) openPerson(e.nodes[0]);
     else if (!e.edges.length && highlight) clearHighlight();

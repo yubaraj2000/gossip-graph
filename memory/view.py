@@ -20,19 +20,22 @@ TOTALS = {
     "conversations": "MATCH (c:Conversation {status: 'ingested'}) RETURN count(c)",
 }
 # Same shape as scripts/live_feed.py: every belief as it forms, with who it came from and the line they heard.
+# Polled by when the belief entered the graph (recorded_at), not when it was said (created_at): conversations finish
+# extraction out of order, so a later-recorded belief can carry an earlier time and would otherwise be skipped.
 NEW_BELIEFS = """
 MATCH (h:Character)<-[:HELD_BY]-(b:Belief)-[:OF]->(c:Claim)
-WHERE b.created_at > $since
+WHERE coalesce(b.recorded_at, b.created_at) > $since
 OPTIONAL MATCH (b)-[:HEARD_FROM]->(:Belief)-[:HELD_BY]->(src:Character)
 OPTIONAL MATCH (b)-[:EVIDENCE]->(m:Message)<-[:SAID]-(src)
 RETURN b.created_at, h.id, h.name, b.origin, b.confidence, b.status, c.id, c.text, c.valence,
-       src.id, src.name, m.text
-ORDER BY b.created_at DESC LIMIT $limit
+       src.id, src.name, m.text, coalesce(b.recorded_at, b.created_at)
+ORDER BY coalesce(b.recorded_at, b.created_at) DESC LIMIT $limit
 """
 
 
 def graph(world_id: str, since: float | None = None, limit: int = 40) -> dict:
-    """Characters, friendships and news flow, plus the beliefs formed since `since` (ms; default: last 30 min)."""
+    """Characters, friendships and news flow, plus the beliefs recorded since `since` (ms; default: last 30 min).
+    Pass back the returned `now` as the next `since`: it is read before the feed query, so nothing falls in between."""
     if not db.exists(db.graph_name(world_id)):
         raise LookupError(f"no world {world_id!r}")
     g = db.world_graph(world_id)
@@ -43,10 +46,10 @@ def graph(world_id: str, since: float | None = None, limit: int = 40) -> dict:
                   for cid, name, kind, gull, n, k in g.ro_query(CHARACTERS).result_set]
     # Humans who neither believe anything nor are talked about (e.g. a visitor's town avatar) are noise on the map.
     characters = [c for c in characters if c["role"] != "outsider" or c["beliefs"] or c["talked_about"]]
-    feed = [{"at": at, "holder": hid, "holder_name": hname, "origin": origin, "confidence": round(conf, 3),
-             "status": status, "claim": cid, "text": text, "valence": valence, "from": sid, "from_name": sname,
-             "line": line}
-            for at, hid, hname, origin, conf, status, cid, text, valence, sid, sname, line
+    feed = [{"at": at, "recorded_at": rec, "holder": hid, "holder_name": hname, "origin": origin,
+             "confidence": round(conf, 3), "status": status, "claim": cid, "text": text, "valence": valence,
+             "from": sid, "from_name": sname, "line": line}
+            for at, hid, hname, origin, conf, status, cid, text, valence, sid, sname, line, rec
             in g.ro_query(NEW_BELIEFS, {"since": now - 30 * 60 * 1000 if since is None else since,
                                         "limit": limit}).result_set]
     return {

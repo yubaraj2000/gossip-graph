@@ -111,7 +111,8 @@ RETURN c.id
 ENSURE_SPEAKER_BELIEF = """
 MATCH (spk:Character {id: $speaker}), (c:Claim {id: $claim})
 MERGE (b:Belief {holder: $speaker, claim: $claim})
-ON CREATE SET b.confidence = $confidence, b.origin = 'self', b.status = 'active', b.created_at = $ts
+ON CREATE SET b.confidence = $confidence, b.origin = 'self', b.status = 'active', b.created_at = $ts,
+              b.recorded_at = timestamp()
 MERGE (b)-[:HELD_BY]->(spk)
 MERGE (b)-[:OF]->(c)
 WITH b
@@ -131,7 +132,8 @@ WHERE NOT (sb)-[:HEARD_FROM*1..8]->(:Belief {holder: $listener})
 OPTIONAL MATCH (lis)-[k:KNOWS]->(spk)
 WITH lis, spk, c, sb, sb.confidence * coalesce(k.trust, lis.gullibility, 0.5) AS incoming
 MERGE (b:Belief {holder: $listener, claim: $claim})
-ON CREATE SET b.confidence = incoming, b.origin = 'heard', b.status = 'active', b.created_at = $ts
+ON CREATE SET b.confidence = incoming, b.origin = 'heard', b.status = 'active', b.created_at = $ts,
+              b.recorded_at = timestamp()
 ON MATCH SET b.confidence = 1 - (1 - b.confidence) * (1 - incoming)
 MERGE (b)-[:HELD_BY]->(lis)
 MERGE (b)-[:OF]->(c)
