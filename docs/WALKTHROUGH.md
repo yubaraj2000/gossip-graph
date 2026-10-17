@@ -144,11 +144,13 @@ The ordering of the `OPTIONAL MATCH`es matters — see section 5.
 ```cypher
 MATCH (:Character {id: $holder})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
 MATCH p = (b)-[:HEARD_FROM*0..8]->(root:Belief)        // walk the arrows back, up to 8 hops
-WHERE NOT (root)-[:HEARD_FROM]->()                     // ...until a belief with no source
+WHERE (root.origin <> 'heard' OR NOT (root)-[:HEARD_FROM]->())   // ...stop at whoever saw it or said it first
+  AND all(x IN nodes(p)[0..size(nodes(p)) - 1] WHERE x.origin = 'heard')  // only hearsay is passed through
 OPTIONAL MATCH (root)-[:SAW]->(e:Event)                // did the root person witness a real event?
 RETURN [x IN nodes(p) | x.holder] AS chain, root.origin, e.description
 ```
 Python then turns the chain into a fixed sentence — never the AI, because in the preview the AI garbled it.
+(Simplified here; the full query, with the claim/subject filters and the line heard at each hop, is `explain.PATHS` in [QUERIES.md](QUERIES.md). The stopping rule was added in Phase 3: a witness who later also *heard* the rumor is still where it came from.)
 
 ---
 
@@ -165,7 +167,7 @@ Python then turns the chain into a fixed sentence — never the AI, because in t
 | Preview | `'Bram''s'` quote-escaping failed | Use query parameters, never string-built values |
 | Dedup | Vectors rated a different *person's* claim closer than a paraphrase | Structured key first; vectors only for the same subject |
 
-Tests: 61 automated (against real FalkorDB, with a scripted AI) + 2 live tests with the real model (3/3 passes).
+Tests at the end of Phase 2: 61 automated (against real FalkorDB, with a scripted AI) + 2 live tests with the real model (3/3 passes). Today: 121 + 2.
 
 ---
 

@@ -2,7 +2,7 @@
 
 Every NPC's memory lives in FalkorDB. An NPC knows something only if there is a `Belief` node that links it to a `Claim`. It knows *why* it believes it by following the belief's `HEARD_FROM` chain back to a witness, or to the character who made it up.
 
-> **Status:** design for Phase 2. All queries below were run against FalkorDB on 2026-10-16 using a 5-character test village.
+> **Status:** current as of Oct 17 (Phases 2–5). The core queries below are copied from the code; **every** query the service runs is in [QUERIES.md](QUERIES.md), generated from the source.
 
 ## Decisions (Oct 16)
 
@@ -56,7 +56,6 @@ graph LR
 | `Case` | `id`, `title`, `question`, `status` (`open` or `solved`), `opened_at`, `briefing` (JSON) | **shared state / handoff**: the case file | `POST /worlds/{id}/cases` |
 | `Lead` | `case`, `target`, `kind` (`hub`, `bridge`, `circle`, `source` or `chosen`), `reason`, `priority`, `status` (`open`, `done` or `dropped`) | **shared state**: who to interview, and why | case briefing; later interviews |
 | `Finding` | `case`, `claim`, `said_by`, `testimony` (`witnessed`, `heard` or `self`), `sources` (direct source names), `line` | **shared state**: the case notes a replacement reads | each interview |
-| `Rule` *(Phase 4.5, stretch)* | `id`, `condition`, `action`, `strength` | **procedural** | learned from events |
 
 `Belief.holder` and `Belief.claim` repeat information that the relationships already hold. This makes `MERGE` idempotent and lookups indexed: there is exactly one belief per (holder, claim).
 
@@ -105,8 +104,10 @@ graph LR
   - A retry loop (every `RETRY_INTERVAL_S`, default 60 s, only while Ollama is reachable) rebuilds failed conversations from the stored transcript and ingests them again. `POST /worlds/{id}/retry` does the same on demand.
   - A lock older than 10 minutes can also be retaken by a resend.
 - **Validation in code** (the 8b model doesn't reliably follow the prompt):
-  - the subject must be a known character
+  - the subject must be a known character, and not the speaker (no self-gossip)
   - the claim text must name the subject
+  - neutral claims (|valence| < 0.15) are dropped: they aren't gossip
+  - instructions, plans, questions, speculation ("perhaps…", "might…") and lowercase fragments are dropped as "not a statement"
   - for person predicates, a non-person object is replaced by the other person named in the text; if there is none, the predicate becomes `did`
   - valence is clamped to −1…1
 - **Claim keys:** person-to-person claims (`stole_from`, `helped`, …) use the structured key `subject|predicate|person`, so "stole" and "swiped" merge. Generic claims (`did`, `is`, `plans_to`, or no person object) use `subject|predicate|<normalized text>`, because a structured key like `p:9|did|` merged *different* stories.
@@ -126,38 +127,44 @@ graph LR
 
 ## Core queries (all verified)
 
-**Q1 — Ingest "listener heard claim from speaker"**
+**Q1 — Ingest "listener heard claim from speaker"** (`ingest.HEAR`). The two `WHERE NOT` lines are the echo and repeat guards.
 ```cypher
-MATCH (lis:Character {id:$listener}), (c:Claim {id:$claim}), (spk:Character {id:$speaker})
+MATCH (lis:Character {id: $listener}), (spk:Character {id: $speaker}), (c:Claim {id: $claim})
+MATCH (sb:Belief {holder: $speaker, claim: $claim, status: 'active'})
+WHERE NOT (sb)-[:HEARD_FROM*1..8]->(:Belief {holder: $listener})
+  AND NOT (:Belief {holder: $listener, claim: $claim})-[:HEARD_FROM]->(sb)
 OPTIONAL MATCH (lis)-[k:KNOWS]->(spk)
-WITH lis, c, coalesce(k.trust, lis.gullibility, 0.5) AS trust
-MATCH (sb:Belief {holder:$speaker, claim:$claim, status:'active'})
-WITH lis, c, sb, sb.confidence * trust AS incoming
-MERGE (b:Belief {holder:$listener, claim:$claim})
-  ON CREATE SET b.confidence = incoming, b.origin = 'heard', b.status = 'active', b.created_at = $ts
-  ON MATCH SET b.confidence = 1 - (1 - b.confidence) * (1 - incoming)
+WITH lis, spk, c, sb, sb.confidence * coalesce(k.trust, lis.gullibility, 0.5) AS incoming
+MERGE (b:Belief {holder: $listener, claim: $claim})
+ON CREATE SET b.confidence = incoming, b.origin = 'heard', b.status = 'active', b.created_at = $ts
+ON MATCH SET b.confidence = 1 - (1 - b.confidence) * (1 - incoming)
 MERGE (b)-[:HELD_BY]->(lis)
 MERGE (b)-[:OF]->(c)
-MERGE (b)-[:HEARD_FROM {at:$ts}]->(sb)
-WITH b MATCH (m:Message {id:$msg}) MERGE (b)-[:EVIDENCE]->(m)
-WITH b MATCH (lis:Character {id:$listener}), (spk:Character {id:$speaker})
-MERGE (lis)-[l:LEARNED_FROM]->(spk) ON CREATE SET l.count = 1 ON MATCH SET l.count = l.count + 1
+MERGE (b)-[:HEARD_FROM {at: $ts}]->(sb)
+MERGE (lis)-[l:LEARNED_FROM]->(spk)
+ON CREATE SET l.count = 1
+ON MATCH SET l.count = l.count + 1
+WITH b
+MATCH (m:Message {id: $msg})
+MERGE (b)-[:EVIDENCE]->(m)
+RETURN b.confidence, b.origin
 ```
 Test result: Bram → Pip gave 0.90, Pip → Mara 0.72, Mara → Tom 0.43. A second source, Bram → Tom directly, raised Tom's belief to **0.60**.
 
 **Q2 — Recall: what I bring up when talking to someone.** This replaces AI Town's vector `searchMemories`. Served by `GET /worlds/{id}/recall?me=&other=&k=`.
 ```cypher
-MATCH (me:Character {id:$me})<-[:HELD_BY]-(b:Belief {status:'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
-OPTIONAL MATCH (b)-[sh:HEARD_FROM]-(:Belief {holder:$other})        // we already exchanged this one
-OPTIONAL MATCH (:Character {id:$other})-[kk:KNOWS]->(s)              // they know the subject
-OPTIONAL MATCH (b)-[:HEARD_FROM]->(:Belief)-[:HELD_BY]->(t:Character)  // who told me
+MATCH (me:Character {id: $me})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
+OPTIONAL MATCH (b)-[sh:HEARD_FROM]-(:Belief {holder: $other})
+OPTIONAL MATCH (:Character {id: $other})-[kk:KNOWS]->(s)
+OPTIONAL MATCH (b)-[:HEARD_FROM]->(:Belief)-[:HELD_BY]->(t:Character)
 WITH b, c, s, count(DISTINCT sh) > 0 AS already_shared, count(DISTINCT kk) > 0 AS other_knows,
      collect(DISTINCT t.name) AS told_by
 WITH b, c, s, told_by, already_shared,
      CASE WHEN s.id = $other THEN 2.0 WHEN other_knows THEN 1.5 ELSE 1.0 END AS relevance
-RETURN c.text, b.confidence, b.origin, told_by, already_shared,
-       b.confidence * abs(c.valence) * relevance * CASE WHEN already_shared THEN 0.2 ELSE 1.0 END AS score
-ORDER BY score DESC LIMIT $k
+RETURN c.id, s.id, s.name, c.text, c.valence, b.confidence, b.origin, told_by, already_shared,
+       b.confidence * abs(c.valence) * relevance * CASE WHEN already_shared THEN $damping ELSE 1.0 END AS score
+ORDER BY score DESC, b.confidence DESC
+LIMIT $k
 ```
 - **Ranking:** `confidence × |valence| × relevance`. Relevance is 2 if the claim is about the person I'm talking to, 1.5 if it's about someone they know, and 1 otherwise. A claim we **already exchanged** (either direction of `HEARD_FROM`) is damped ×0.2, so NPCs don't repeat themselves.
 - The endpoint also returns:
@@ -169,42 +176,49 @@ ORDER BY score DESC LIMIT $k
 
 **Q3 — Shared episodes:** past conversations between the two characters.
 ```cypher
-MATCH (:Character {id:$me})-[:PARTICIPATED_IN]->(cv:Conversation)<-[:PARTICIPATED_IN]-(:Character {id:$other})
-RETURN cv.id, cv.summary ORDER BY cv.ended_at DESC LIMIT 3
+MATCH (:Character {id: $me})-[:PARTICIPATED_IN]->(cv:Conversation {status: 'ingested'})<-[:PARTICIPATED_IN]-(:Character {id: $other})
+RETURN cv.id, cv.summary, cv.ended_at
+ORDER BY cv.ended_at DESC
+LIMIT $n
 ```
 
 **Q4 — Explain: "who told you that?"** Returns every provenance path. Served by `GET /worlds/{id}/explain?holder=&claim=&subject=`. It adds the line heard at each hop (the listener's `EVIDENCE` message, said by the next person in the chain), plus an answer sentence built **from the path, not by the LLM**, e.g. *"Mara told me. Mara heard it from Pip, who heard it from Bram. Bram saw it happen."* The verdict is `witnessed` if any path's root `SAW` an event; otherwise `unverified`.
 ```cypher
-MATCH (:Character {id:$holder})<-[:HELD_BY]-(b:Belief)-[:OF]->(:Claim {id:$claim})
+MATCH (:Character {id: $holder})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(s:Character)
+WHERE ($claim IS NULL OR c.id = $claim) AND ($subject IS NULL OR s.id = $subject)
 MATCH p = (b)-[:HEARD_FROM*0..8]->(root:Belief)
-WHERE NOT (root)-[:HEARD_FROM]->()
+WHERE (root.origin <> 'heard' OR NOT (root)-[:HEARD_FROM]->())
+  AND all(x IN nodes(p)[0..size(nodes(p)) - 1] WHERE x.origin = 'heard')
 OPTIONAL MATCH (root)-[:SAW]->(e:Event)
-RETURN [x IN nodes(p) | x.holder] AS chain, root.origin, e.description
+OPTIONAL MATCH (c)-[:REFERS_TO]->(ev:Event)
+RETURN c.id, c.text, s.id, c.valence, b.confidence, b.origin,
+       [x IN nodes(p) | x.holder] AS chain, [x IN nodes(p) | x.confidence] AS confidences,
+       root.origin, e.description, count(ev) > 0 AS grounded
+ORDER BY b.confidence DESC, c.id, length(p)
 ```
+A path stops at the first belief that was witnessed or said first: a later `HEARD_FROM` from such a belief is corroboration, not where it came from.
+
 Test results:
 - Tom's belief came back with two paths: `Tom ← Bram` and `Tom ← Mara ← Pip ← Bram`. Both trace to Bram's witnessed event.
 - The rumor "Tom is a smuggler" came back as `Mara ← Pip` with origin `self`: Pip made it up.
 
-**Q5 — Reputation:** how one character sees another.
+**Q5 — Reputation:** how one character sees another (`recall.REPUTATION`). The memory page's village-wide reputation averages this per villager instead of summing it, so being talked about a lot doesn't by itself make someone look worse (`view.REPUTATION`).
 ```cypher
-MATCH (:Character {id:$holder})<-[:HELD_BY]-(b:Belief {status:'active'})-[:OF]->(c:Claim)-[:ABOUT]->(:Character {id:$subject})
-RETURN sum(b.confidence * c.valence) AS reputation, count(b) AS evidence
+MATCH (:Character {id: $me})<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(:Character {id: $other})
+RETURN coalesce(sum(b.confidence * c.valence), 0.0), count(b)
 ```
 
-**Q6 — Graph algorithms as gameplay**
+**Q6 — Graph algorithms as gameplay** (the investigator's briefing and the Insights tab, `cases.briefing`)
 ```cypher
-// Bridges: whose silence stops a rumor crossing groups
-CALL algo.betweenness({nodeLabels:['Character'], relationshipTypes:['KNOWS']}) YIELD node, score
-// Influencers: who others learn from. LEARNED_FROM points listener → speaker,
-// so PageRank flows to the sources.
-CALL algo.pageRank('Character', 'LEARNED_FROM') YIELD node, score
-// Cliques
-CALL algo.labelPropagation({nodeLabels:['Character'], relationshipTypes:['KNOWS']}) YIELD node, communityId
+// Bridges: whose silence stops a rumor crossing groups. Read from the seeded FRIEND ties (KNOWS before any exist),
+// because KNOWS grows with every first conversation and soon links almost everyone.
+CALL algo.betweenness({nodeLabels: ['Character'], relationshipTypes: ['FRIEND']}) YIELD node, score
+RETURN node.id, score
+// News hubs: who others learn from. LEARNED_FROM points listener -> speaker, so PageRank flows to the sources.
+CALL algo.pageRank('Character', 'LEARNED_FROM') YIELD node, score RETURN node.id, score
 ```
-Test results:
-- Betweenness: Mara 1.0, Pip 0.5, Tom 0.5.
-- PageRank: Bram 0.37 (the original witness), then Pip 0.25.
-- Label propagation: ⚠️ noisy on a 5-character graph. It needs the real 8–10 NPC village to be meaningful.
+- **Circles** are the connected groups of `FRIEND` ties once the top bridge is removed (`cases._components`, in Python). FalkorDB's `algo.labelPropagation` grouped unconnected villagers together on this graph, so it isn't used.
+- On Chandanpur: Gopal is the top bridge (betweenness 24), then Lakshmi (13); the circles are {Ramesh, Sarla, Chotu, Lakshmi} and {Meera, Balwant, Pandit Shastri}.
 
 ## Indexes
 
@@ -227,13 +241,13 @@ There is one call per finished conversation, using `llama3.1:8b` with Ollama's J
 {
   "summary": "Pip told Mara that Kai stole Bram's hammer.",
   "claims": [
-    {"message_index": 0, "speaker": "Pip", "subject": "Kai", "predicate": "stole_from",
+    {"message_index": 0, "subject": "Kai", "predicate": "stole_from",
      "object": "Bram", "text": "Kai stole a hammer from Bram", "valence": -0.8}
   ]
 }
 ```
 - **`predicate` vocabulary:** `stole_from`, `attacked`, `helped`, `lied_to`, `gave_to`, `owes`, `likes`, `dislikes`, `is` (a trait), `did` (any other action), `plans_to`.
-- **Validation:** claims whose `subject` isn't a known character are dropped, as is small talk with no claim.
+- **Validation:** see "Validation in code" above. The speaker is taken from `message_index`, never from the model.
 
 ## Track 2 coverage
 
@@ -241,9 +255,9 @@ There is one call per finished conversation, using `llama3.1:8b` with Ollama's J
 |---|---|
 | Episodic memory | `Conversation`, `Message`, `Event` |
 | Semantic memory | `Claim` plus `Belief` (confidence, origin, validity) |
-| Procedural memory | `Rule` (Phase 4.5, stretch) |
 | Persistent conversation history | `Conversation`/`Message`, recalled with Q3 |
-| Shared state and handoffs | Beliefs flowing along `HEARD_FROM`; `Task` (4.4) |
+| Shared state and handoffs | The case file (`Case`, `Lead`, `Finding`): a replacement investigator resumes from it after a crash, without repeating an interview; gossip itself flows along `HEARD_FROM` |
+| Memory updates and corrections | A verdict marks debunked beliefs `superseded` with `valid_to` and `DEBUNKED_BY` (never deleted); villagers remember the correction and the rumor can't spread again |
 | High-concurrency reads and writes | Writes to different world graphs run in parallel; idempotent `MERGE` ingest |
 | Separate memory per user/tenant | One graph per world (`world_<id>`); background villages start as a `GRAPH.COPY` of a village template (`template_<name>`) and are checked to stay isolated (`scripts/background_village.py`) |
 
@@ -251,3 +265,7 @@ There is one call per finished conversation, using `llama3.1:8b` with Ollama's J
 
 - Pattern predicates such as `(a)-[:R]->(b)` work in `WHERE`, but **not** inside `CASE` or `RETURN` expressions. Use `OPTIONAL MATCH` plus `count(x) > 0` instead.
 - Vector `score` is a distance. Sort ascending.
+- An `OPTIONAL MATCH` after `OPTIONAL MATCH … WITH <aggregation>` silently matched nothing (6.0.2): keep every `OPTIONAL MATCH` before the aggregating `WITH`.
+- No `COUNT { }` subqueries; use `OPTIONAL MATCH` plus `count()`.
+- `''` quote escaping inside string literals fails; always pass text as a parameter.
+- Creating an index that already exists raises "already indexed"; `CALL db.indexes()` on a graph that was never written fails with "empty key".

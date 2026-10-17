@@ -49,7 +49,7 @@ Browser ──► AI Town (pixel world: NPCs walk and talk)      [open-source ba
 - [x] **1.1** Copy AI Town into the project as `world/`, with credit and its MIT license kept.
 - [x] **1.2** Start AI Town's self-hosted Convex backend in Docker on the Mac, and generate its admin key.
 - [x] **1.3** Open a persistent SSH tunnel to Ubuntu's Ollama on port 11435, and check that Convex can reach it from inside Docker.
-- [x] **1.4** Run the town with `llama3.2:3b` and `nomic-embed-text`, and watch NPCs talk to each other.
+- [x] **1.4** Run the town with `llama3.2:3b` and `mxbai-embed-large` (AI Town needs 1024-d embeddings; `nomic-embed-text` is 768-d), and watch NPCs talk to each other.
 - [x] **1.5** Measure how fast the NPCs chat, and how much memory the Mac uses.
 
 **Go/no-go decision (you decide):**
@@ -94,7 +94,7 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
 - [x] **4.1 Case file in the graph:** `Case`, leads, interviews and findings, written after every step so a replacement can resume. Plus a **briefing**, our version of Graphify's `GRAPH_REPORT.md`, computed from public structure:
   - gossip hubs (PageRank on `LEARNED_FROM`)
   - bridges (betweenness)
-  - cliques (label propagation)
+  - circles (friend groups once the top bridge is removed; FalkorDB's label propagation proved unusable on the village)
 - [x] **4.2 Lead planner:** the next interviewee comes from the graph. Start at hubs and bridges, then follow each "who told you?" answer upstream until reaching a witness, or until leads run out.
 - [x] **4.3 Interview loop:** templated questions from the investigator. NPC answers are grounded in that NPC's own recall and explain. Interviews are ingested like any conversation, so the investigator builds its own beliefs with provenance.
 - [x] **4.4 Crash and resume:** kill investigator #1 mid-case. Investigator #2 (knows nothing) reads the case file and finishes **without re-interviewing**.
@@ -124,7 +124,7 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
 ## Phase 6 — Submission (feature freeze: Oct 18, 14:00 IST)
 
 - [ ] **6.1** One-command local setup (`docker compose`), plus instructions for Ollama.
-- [ ] **6.2** README:
+- [x] **6.2** README (`README.md`; every query generated into `docs/QUERIES.md`; the video link is added at submission):
   - what it is and the architecture diagram
   - **graph data model**
   - **every Cypher query and algorithm used**
