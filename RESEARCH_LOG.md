@@ -1334,6 +1334,25 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
   - **PLAN:** `nomic-embed-text` corrected to `mxbai-embed-large`; circles no longer attributed to label propagation.
 - Both README Mermaid diagrams were checked by rendering them with mermaid 10.9.1 in Chrome: they parse.
 
+**✅ 6.1 One-command start** [AI]
+- **`scripts/up.sh`** brings up the stack in 6 checked steps, starting only what isn't already running:
+  1. FalkorDB
+  2. Ollama: reachable at `OLLAMA_URL`, or opens `ollama-tunnel.sh watch` on :11435
+  3. the memory service (waits for `/health`, with FalkorDB true and Ollama known)
+  4. Convex: the backend, then the dashboard once healthy; it verifies `world/.env.local` and the 4 required Convex env vars
+  5. deploys the town's code (`--typecheck enable`), and runs `init` plus `seed_village.py` if there is no world
+  6. Vite, plus `caffeinate` on macOS
+
+  Background processes log to `.run/` (gitignored), with pid files. `status` checks only; `down` stops what it started.
+- **Tested on the live stack:**
+  - `up` on a running stack took 4.4 s and started nothing new.
+  - With the memory service and Vite killed, `status` showed both ❌, and `up` restarted both ✅.
+  - `down` stopped them again, and `up` brought everything back (6/6 ✅).
+- **`scripts/reset_village.sh --yes`**: stop, wipe (waits until the `worlds` and `messages` tables are empty), deploy, `init`, seed, then `background_village.py --fresh --good-deed`. Without `--yes` it only explains what it would do. It's kept for the recording run.
+  - ❌ → ✅ My first wipe check waited on a `players` table, but this AI Town keeps players inside the world document, so the check proved nothing. It now checks `worlds`.
+- **Security fix (open since Phase 1):** AI Town's compose file published Convex 3210/3211 and the dashboard on **every interface**, plus a host **11434** mapping. Now they're bound to `127.0.0.1`, and the 11434 mapping is removed: nothing listens there, and it would block a local Ollama on its default port, which is the README's suggested setup. After recreating, the backend kept its data (same world id). The dashboard needed a second `up` because compose checked the backend's health too early, so `up.sh` now waits for the backend before starting the dashboard.
+- **README "Run it yourself"** now reads: a one-off configuration block, then `scripts/up.sh`.
+
 ---
 
 ## Open questions

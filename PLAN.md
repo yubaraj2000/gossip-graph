@@ -123,7 +123,7 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
 
 ## Phase 6 — Submission (feature freeze: Oct 18, 14:00 IST)
 
-- [ ] **6.1** One-command local setup (`docker compose`), plus instructions for Ollama.
+- [x] **6.1** One-command local setup: `scripts/up.sh [status|down]`, plus `scripts/reset_village.sh --yes`; Ollama instructions in the README.
 - [x] **6.2** README (`README.md`; every query generated into `docs/QUERIES.md`; the video link is added at submission):
   - what it is and the architecture diagram
   - **graph data model**
