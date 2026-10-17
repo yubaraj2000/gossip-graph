@@ -1,7 +1,7 @@
 """Read-only views of a world's graph for the memory page (Phase 5). Each panel is a few small Cypher queries."""
 import time
 
-from memory import db
+from memory import cases, db, recall
 
 CHARACTERS = """
 MATCH (c:Character)
@@ -57,4 +57,43 @@ def graph(world_id: str, since: float | None = None, limit: int = 40) -> dict:
         "news_flow": [{"from": s, "to": t, "count": n} for s, t, n in g.ro_query(NEWS_FLOW).result_set],
         "totals": {name: g.ro_query(q).result_set[0][0] for name, q in TOTALS.items()},
         "feed": feed,
+    }
+
+
+# What the village thinks of each person: each villager's opinion is the average of confidence x valence over their
+# active beliefs about that person (-1 to +1), and the village's view averages the villagers who have one.
+# Averages, not sums: a sum grows with how much someone is talked about, so the most gossiped-about person would
+# always look worst. Investigators' notes don't count.
+REPUTATION = """
+MATCH (h:Character)<-[:HELD_BY]-(b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(x:Character)
+WHERE h <> x AND NOT (h)-[:INVESTIGATES]->()
+WITH x, h, avg(b.confidence * c.valence) AS opinion
+RETURN x.id, x.name, avg(opinion), count(h),
+       sum(CASE WHEN opinion < -0.15 THEN 1 ELSE 0 END), sum(CASE WHEN opinion > 0.15 THEN 1 ELSE 0 END)
+"""
+# The most widely believed claim about each person.
+TOP_CLAIM = """
+MATCH (b:Belief {status: 'active'})-[:OF]->(c:Claim)-[:ABOUT]->(x:Character)
+WITH x, c, count(b) AS believers ORDER BY believers DESC
+RETURN x.id, collect(c.text)[0], collect(believers)[0]
+"""
+
+
+def insights(world_id: str) -> dict:
+    """The village as a whole: bridges, news hubs and circles (the investigator's briefing, computed live) and
+    what the village thinks of each person."""
+    if not db.exists(db.graph_name(world_id)):
+        raise LookupError(f"no world {world_id!r}")
+    g = db.world_graph(world_id)
+    structure = cases.briefing(g)
+    top = {x: (text, n) for x, text, n in g.ro_query(TOP_CLAIM).result_set}
+    reputation = [{"id": x, "name": name, "opinion": round(avg, 3), "words": recall.reputation_words(avg),
+                   "villagers_with_opinion": holders, "think_badly": int(bad), "think_well": int(good),
+                   "top_claim": top.get(x, (None, 0))[0], "top_claim_believers": top.get(x, (None, 0))[1]}
+                  for x, name, avg, holders, bad, good in g.ro_query(REPUTATION).result_set]
+    return {
+        "world": world_id,
+        "summary": [line for line in structure["summary"] if not line.startswith("Suggested")],
+        **{k: structure[k] for k in ("hubs", "bridges", "circles", "hubs_based_on", "circles_based_on")},
+        "reputation": sorted(reputation, key=lambda r: r["opinion"]),
     }

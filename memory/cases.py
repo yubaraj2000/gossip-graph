@@ -167,8 +167,15 @@ ORDER BY f.at
 INTERVIEWS = """
 MATCH (cv:Conversation {kind: 'interview'})-[:PART_OF]->(:Case {id: $case})
 MATCH (p:Character)-[:PARTICIPATED_IN]->(cv)
-RETURN cv.id, cv.ended_at, cv.summary, collect(p.name)
+RETURN cv.id, cv.ended_at, cv.summary, collect(p.name), collect(p.id)
 ORDER BY cv.ended_at
+"""
+
+CASES = """
+MATCH (k:Case)
+OPTIONAL MATCH (i:Character)-[:INVESTIGATES {active: true}]->(k)
+RETURN k.id, k.title, k.status, k.opened_at, collect(i.name)
+ORDER BY k.opened_at DESC
 """
 
 
@@ -235,14 +242,22 @@ def case_file(world_id: str, case_id: str) -> dict:
         "investigators": sorted((i for i in investigators if i["id"]), key=lambda i: i["since"]),
         "leads": sorted((ld for ld in leads if ld["target"]),
                         key=lambda ld: (order.get(ld["status"], 9), ld["priority"], ld["created_at"])),
-        "interviews": [{"conversation": c, "at": at, "summary": summ, "participants": who}
-                       for c, at, summ, who in g.ro_query(INTERVIEWS, {"case": case_id}).result_set],
+        "interviews": [{"conversation": c, "at": at, "summary": summ, "participants": who, "participant_ids": ids}
+                       for c, at, summ, who, ids in g.ro_query(INTERVIEWS, {"case": case_id}).result_set],
         "findings": [{"claim": c, "text": text, "said_by": by, "said_by_id": by_id, "testimony": t, "sources": src,
                       "line": line, "at": at}
                      for c, text, by, by_id, t, src, line, at in g.ro_query(FINDINGS, {"case": case_id}).result_set],
         "briefing": json.loads(report) if report else None,
         "verdict": json.loads(verdict) if verdict else None,
     }
+
+
+def list_cases(world_id: str) -> list[dict]:
+    """Every case in the world, newest first, with whoever is on it now."""
+    if not db.exists(db.graph_name(world_id)):
+        return []
+    return [{"case": cid, "title": title, "status": status, "opened_at": opened, "investigator": (who or [None])[0]}
+            for cid, title, status, opened, who in db.world_graph(world_id).ro_query(CASES).result_set]
 
 
 def assign(world_id: str, case_id: str, investigator: CharacterIn) -> dict:

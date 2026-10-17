@@ -52,6 +52,50 @@
   #feed .outdated { text-decoration: line-through; opacity: .6; }
   .empty { color: var(--muted); padding: 16px 12px; }
   .view { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
+                 padding: 10px 8px; font: inherit; font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+                 cursor: pointer; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--news); }
+  .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+  #insights { padding: 4px 12px 12px; }
+  #insights h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+                 margin: 14px 0 6px; display: flex; justify-content: space-between; gap: 8px; }
+  #insights h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  #insights .summary { margin: 10px 0 0; padding-left: 18px; }
+  #insights .summary li { margin-bottom: 4px; }
+  .pick { cursor: pointer; border-radius: 6px; padding: 4px 6px; margin: 0 -6px; }
+  .pick:hover, .pick.on { background: var(--panel-2); }
+  .rank { display: flex; gap: 8px; align-items: baseline; }
+  .rank b { min-width: 1.4em; color: var(--muted); font-weight: 400; }
+  .rank span:last-child { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .rep { display: grid; grid-template-columns: 7.5em 1fr; gap: 2px 8px; align-items: center; }
+  .rep .bar { position: relative; height: 10px; background: var(--panel-2); border-radius: 5px; }
+  .rep .bar::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line); }
+  .rep .bar i { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+  .rep .note { grid-column: 2; color: var(--muted); font-size: 12px; }
+  .source { color: var(--muted); font-size: 11px; margin-top: 16px; }
+  #case { padding: 8px 12px 12px; }
+  #case h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 6px;
+             display: flex; justify-content: space-between; gap: 8px; }
+  #case h3 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  #case .title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #case .badge { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-radius: 999px;
+                 padding: 1px 8px; border: 1px solid var(--line); }
+  #case .badge.open { color: var(--news); border-color: var(--news); }
+  #case .badge.solved { color: var(--good); border-color: var(--good); }
+  #case .question, #case .muted { color: var(--muted); font-size: 12px; }
+  #case ul { margin: 0; padding-left: 18px; }
+  #case .lead { display: grid; grid-template-columns: 1.2em 1fr; gap: 0 6px; margin-bottom: 6px; }
+  #case .lead .why { grid-column: 2; color: var(--muted); font-size: 12px; }
+  #case .lead.done > span:nth-child(2) { color: var(--muted); }
+  #case .kind { font-size: 11px; color: var(--investigator); margin-left: 4px; }
+  #case .interview { margin-bottom: 8px; }
+  #case .interview .who { display: flex; justify-content: space-between; gap: 8px; }
+  #case .interview .who span:last-child { color: var(--muted); font-size: 12px; }
+  #case .said { font-size: 13px; margin: 2px 0 0 14px; }
+  #case .verdict div { margin-bottom: 6px; }
+  #case select { width: 100%; margin-bottom: 8px; }
   .view[hidden], #why[hidden] { display: none; }
   button.link { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; padding: 0;
                 text-transform: none; letter-spacing: 0; }
@@ -99,9 +143,19 @@
     </div>
   </section>
   <section>
+    <nav class="tabs" id="tabs">
+      <button data-tab="feed" class="on"><span class="live" id="live"></span>Live feed</button>
+      <button data-tab="insights">Insights</button>
+      <button data-tab="case">Case</button>
+    </nav>
     <div class="view" id="feed-view">
-      <h2><span class="live" id="live"></span>Beliefs forming, live</h2>
       <ul id="feed"><li class="empty">Waiting for gossip…</li></ul>
+    </div>
+    <div class="view" id="insights-view" hidden>
+      <div class="scroll" id="insights"><p class="empty">Loading…</p></div>
+    </div>
+    <div class="view" id="case-view" hidden>
+      <div class="scroll" id="case"><p class="empty">Loading…</p></div>
     </div>
     <div class="view" id="person-view" hidden>
       <h2><button class="link" id="back">← live feed</button><span id="person-name"></span></h2>
@@ -119,7 +173,10 @@ const COLORS = { villager: '#e8a65d', outsider: '#9aa3ad', investigator: '#6fa8d
 const params = new URLSearchParams(location.search);
 let world = params.get('world');
 let since = null, timer = null, network = null, lastData = null;
-let person = null, personBeliefs = [], highlight = null, selectedClaim = null;  // highlight: {nodes: Set} while a belief's trail is shown
+let person = null, personBeliefs = [], highlight = null, selectedClaim = null;
+let tab = 'feed', insightsAt = 0;
+let caseId = null, caseJson = null;  // the case on the board, and its last rendered state
+const INSIGHTS_MS = 10000;  // highlight: {nodes: Set} while a belief's trail is shown
 const nodes = new vis.DataSet(), edges = new vis.DataSet();
 const seenFeed = new Set();
 
@@ -153,10 +210,10 @@ async function loadWorlds() {
 
 function switchWorld(w) {
   closePerson();
+  insightsAt = 0; caseId = null; caseJson = null; clearCaseTrail();
   world = w; since = null; seenFeed.clear(); nodes.clear(); edges.clear();
   try { localStorage.setItem('memory-ui-world', w); } catch (e) {}
   document.getElementById('feed').replaceChildren(el('li', 'empty', 'Waiting for gossip…'));
-  network.setOptions({ physics: { enabled: true } });
   poll();
 }
 
@@ -177,7 +234,11 @@ function nodeFor(c) {
 function render(data) {
   const showNews = document.getElementById('show-news').checked;
   const showFriends = document.getElementById('show-friends').checked;
+  const arrived = data.characters.some(c => !nodes.get(c.id));
   nodes.update(data.characters.map(nodeFor));
+  // Lay out a newly loaded village, or make room for someone new (e.g. an investigator joining the case);
+  // physics stops again once it settles (see 'stabilized' in start()).
+  if (arrived) network.setOptions({ physics: { enabled: true } });
   const keep = new Set(data.characters.map(c => c.id));
   nodes.remove(nodes.getIds().filter(id => !keep.has(id)));
 
@@ -205,7 +266,7 @@ function render(data) {
     }
   }
   const wantIds = new Set(want.map(e => e.id));
-  edges.remove(edges.getIds().filter(id => !wantIds.has(id) && !/^(flash|path):/.test(String(id))));
+  edges.remove(edges.getIds().filter(id => !wantIds.has(id) && !/^(flash|path|case):/.test(String(id))));
   edges.update(want);
 
   const t = data.totals;
@@ -264,6 +325,8 @@ async function poll() {
     const data = await api(`/worlds/${encodeURIComponent(world)}/graph` + (first ? '' : `?since=${since}`));
     lastData = data;
     render(data);
+    if (tab === 'insights' && !person && Date.now() - insightsAt > INSIGHTS_MS) loadInsights();
+    if (tab === 'case' && !person) loadCase();
     addFeed(data.feed, first);
     since = data.feed.length ? Math.max(since ?? 0, ...data.feed.map(b => b.at)) : (since ?? data.now);
     live.classList.remove('off'); live.title = 'live';
@@ -279,7 +342,7 @@ const ICON = { witnessed: '👁', heard: '👂', self: '🗣' };
 async function openPerson(id, claim) {
   person = id;
   const c = lastData?.characters.find(x => x.id === id);
-  document.getElementById('feed-view').hidden = true;
+  for (const v of ['feed', 'insights', 'case']) document.getElementById(`${v}-view`).hidden = true;
   document.getElementById('person-view').hidden = false;
   document.getElementById('person-name').textContent = c?.name ?? id;
   document.getElementById('person-meta').textContent = c ? `${c.role} · ${c.beliefs} active beliefs` +
@@ -370,17 +433,223 @@ function clearHighlight() {
   document.getElementById('why').hidden = true;
   selectedClaim = null;
   for (const li of document.querySelectorAll('#beliefs li.selected')) li.classList.remove('selected');
+  insightPick = null;
+  for (const n of document.querySelectorAll('.pick.on')) n.classList.remove('on');
   refresh();
 }
 
 function closePerson() {
   person = null;
   document.getElementById('person-view').hidden = true;
-  document.getElementById('feed-view').hidden = false;
+  document.getElementById(`${tab}-view`).hidden = false;
   clearHighlight();
 }
 
+function showTab(name) {
+  tab = name;
+  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name);
+  if (person) closePerson();
+  for (const v of ['feed', 'insights', 'case']) document.getElementById(`${v}-view`).hidden = v !== name;
+  clearHighlight();
+  if (name !== 'case') clearCaseTrail();
+  if (name === 'insights') loadInsights();
+  if (name === 'case') { caseJson = null; loadCase(); }
+}
+
 function refresh() { if (lastData) render(lastData); }
+
+// ---- 5.3 Insights: the village as a whole, computed live by FalkorDB ----
+let insightPick = null;  // the insight row whose people are lit on the map
+
+function pickable(node, ids, label) {
+  node.classList.add('pick');
+  node.title = `show ${label} on the map`;
+  node.onclick = () => {
+    const same = insightPick === node;
+    for (const n of document.querySelectorAll('.pick.on')) n.classList.remove('on');
+    if (same) { insightPick = null; clearHighlight(); return; }
+    insightPick = node;
+    node.classList.add('on');
+    highlight = { nodes: new Set(ids) };
+    refresh();
+  };
+  return node;
+}
+
+async function loadInsights() {
+  insightsAt = Date.now();
+  let d;
+  try { d = await api(`/worlds/${encodeURIComponent(world)}/insights`); } catch (e) { return; }
+  if (tab !== 'insights' || person || d.world !== world) return;
+  const box = document.getElementById('insights');
+  const keep = insightPick?.dataset.key;
+  const parts = [];
+
+  const summary = el('ul', 'summary');
+  for (const line of d.summary) summary.append(el('li', null, line));
+  parts.push(summary);
+
+  const section = (title, note) => { const h = el('h3', null, title); if (note) h.append(el('small', null, note)); return h; };
+  const ranked = (items, unit) => items.map((it, i) => {
+    const row = el('div', 'rank');
+    row.dataset.key = `${unit}:${it.id}`;
+    row.append(el('b', null, `${i + 1}.`), el('span', null, it.name), el('span', null, `${unit} ${it.score}`));
+    return pickable(row, [it.id], it.name);
+  });
+
+  parts.push(section('🌉 Bridges', 'betweenness on friendships'),
+             ...ranked(d.bridges, 'betweenness'),
+             section('📣 News hubs', d.hubs_based_on === 'who learned from whom' ? 'PageRank on who learned from whom' : 'PageRank on trust'),
+             ...ranked(d.hubs, 'rank'),
+             section('👥 Circles', 'friend groups once the top bridge is removed'));
+  d.circles.forEach((c, i) => {
+    const row = el('div', null, `Circle ${i + 1}: ${c.map(m => m.name).join(', ')}`);
+    row.dataset.key = `circle:${i}`;
+    parts.push(pickable(row, c.map(m => m.id), `circle ${i + 1}`));
+  });
+
+  parts.push(section('⭐ Reputation', 'what the village believes about each person'));
+  if (!d.reputation.length) parts.push(el('p', 'empty', 'Nobody has an opinion about anyone yet.'));
+  for (const r of d.reputation) {
+    const row = el('div', 'rep');
+    row.dataset.key = `rep:${r.id}`;
+    const bar = el('div', 'bar'), fill = el('i');
+    const w = Math.min(1, Math.abs(r.opinion)) * 50;
+    fill.style.cssText = r.opinion < 0 ? `right:50%;width:${w}%;background:var(--bad)` : `left:50%;width:${w}%;background:var(--good)`;
+    bar.append(fill);
+    bar.title = `${r.opinion > 0 ? '+' : ''}${r.opinion}`;
+    const note = el('div', 'note', `${r.words} · ${r.think_badly} of ${r.villagers_with_opinion} think badly, ${r.think_well} well` +
+      (r.top_claim ? ` · most believed: “${r.top_claim.slice(0, 70)}” (${r.top_claim_believers})` : ''));
+    row.append(el('span', null, r.name), bar, note);
+    parts.push(pickable(row, [r.id], r.name));
+  }
+  parts.push(el('p', 'source', 'Computed live in FalkorDB: algo.betweenness and algo.pageRank on the village graph, plus Cypher aggregation over every active belief. Click a row to light those people up on the map.'));
+
+  box.replaceChildren(...parts);
+  insightPick = keep ? box.querySelector(`[data-key="${CSS.escape(keep)}"]`) : null;
+  insightPick?.classList.add('on');
+}
+
+// ---- 5.4 Case board: the investigation, live from the case file in the graph ----
+const TESTIMONY = { witnessed: '👁', heard: '👂', self: '🗣' };
+const LEAD_KIND = { hub: 'news hub', bridge: 'bridge', circle: 'circle voice', source: 'named as a source', chosen: 'chosen' };
+
+function clearCaseTrail() { edges.remove(edges.getIds().filter(id => String(id).startsWith('case:'))); }
+
+async function loadCase() {
+  let list;
+  try { list = (await api(`/worlds/${encodeURIComponent(world)}/cases`)).cases; } catch (e) { return; }
+  const box = document.getElementById('case');
+  if (!list.length) {
+    box.replaceChildren(el('p', 'empty', 'No investigation in this village yet. Start one with scripts/investigate.py.'));
+    clearCaseTrail();
+    return;
+  }
+  if (!list.some(c => c.case === caseId)) caseId = list[0].case;  // newest case by default
+  let file;
+  try { file = await api(`/worlds/${encodeURIComponent(world)}/cases/${encodeURIComponent(caseId)}`); } catch (e) { return; }
+  if (tab !== 'case' || person) return;
+  const json = JSON.stringify([list, file]);
+  if (json === caseJson) return;  // nothing new: keep the board (and its scroll position) as it is
+  caseJson = json;
+  renderCase(list, file);
+}
+
+function renderCase(list, f) {
+  const box = document.getElementById('case');
+  const parts = [];
+  if (list.length > 1) {
+    const sel = el('select');
+    sel.setAttribute('aria-label', 'Case');
+    for (const c of list) {
+      const o = el('option', null, `${c.title} · ${c.case} (${c.status})`);
+      o.value = c.case; o.selected = c.case === f.case;
+      sel.append(o);
+    }
+    sel.onchange = () => { caseId = sel.value; caseJson = null; loadCase(); };
+    parts.push(sel);
+  }
+  const title = el('div', 'title', f.title);
+  title.append(el('span', `badge ${f.status}`, f.status));
+  parts.push(title, el('div', 'question', f.question));
+
+  // Who has been on the case: a crashed investigator stays in the file, inactive.
+  const team = el('div', 'muted');
+  team.textContent = '👮 ' + f.investigators.map(i => `${i.name} (${i.active ? 'on the case' : 'left the case'})`).join(' → ');
+  parts.push(team);
+
+  if (f.briefing) {
+    parts.push(el('h3', null, 'Briefing'));
+    const notes = el('div', 'muted', 'From the village structure only, before any interview.');
+    const ul = el('ul');
+    for (const line of f.briefing.summary) ul.append(el('li', null, line));
+    parts.push(notes, ul);
+  }
+
+  const open = f.leads.filter(l => l.status === 'open').length;
+  const h = el('h3', null, 'Leads');
+  h.append(el('small', null, `${open} open · ${f.leads.length - open} done`));
+  parts.push(h);
+  for (const l of f.leads) {
+    const row = el('div', `lead ${l.status}`);
+    const name = el('span', null, l.name);
+    name.append(el('span', 'kind', LEAD_KIND[l.kind] ?? l.kind));
+    row.append(el('span', null, l.status === 'done' ? '✓' : l.status === 'open' ? '○' : '–'), name, el('span', 'why', l.reason));
+    parts.push(pickable(row, [l.target], l.name));
+  }
+
+  parts.push(el('h3', null, 'Interviews'));
+  if (!f.interviews.length) parts.push(el('p', 'muted', 'None yet.'));
+  const investigators = new Set(f.investigators.map(i => i.id));
+  f.interviews.forEach((iv, n) => {
+    const by = iv.participant_ids.find(id => investigators.has(id));
+    const who = iv.participant_ids.find(id => !investigators.has(id));
+    const byName = iv.participants[iv.participant_ids.indexOf(by)] ?? '?';
+    const whoName = iv.participants[iv.participant_ids.indexOf(who)] ?? '?';
+    const ivBox = el('div', 'interview');
+    const head = el('div', 'who');
+    head.append(el('span', null, `${n + 1}. ${byName} → ${whoName}`), el('span', null, clock(iv.at)));
+    ivBox.append(head);
+    const said = f.findings.filter(x => x.said_by_id === who);
+    if (!said.length) ivBox.append(el('div', 'said muted', '“I haven’t heard anything about that.”'));
+    for (const x of said) ivBox.append(el('div', 'said', `${TESTIMONY[x.testimony] ?? ''} “${x.line}”`));
+    parts.push(pickable(ivBox, [who, by].filter(Boolean), whoName));
+  });
+
+  if (f.verdict) {
+    const v = f.verdict;
+    const head = el('h3', null, 'Verdict');
+    head.append(el('small', null, `by ${v.by}`));
+    const vBox = el('div', 'verdict');
+    const end = t => /[.!?]$/.test(t.trim()) ? t.trim() : t.trim() + '.';  // claims don't always end in a period
+    for (const c of v.confirmed) vBox.append(el('div', null, `✅ True: ${end(c.text)} ${c.witnesses.join(' and ')} saw it.`));
+    for (const c of v.unfounded) vBox.append(el('div', null, `✗ Made up: ${end(c.text)} Started by ${c.started_by.join(' and ')}; nobody saw it.`));
+    for (const c of v.distorted) vBox.append(el('div', null, `〰 Garbled: ${end(c.text)} A distorted retelling of “${c.retelling_of}”.`));
+    for (const c of v.unresolved) vBox.append(el('div', null, `? Unresolved: ${end(c.text)}`));
+    const pub = v.published;
+    if (pub) vBox.append(el('div', 'muted', `${pub.beliefs_superseded} beliefs marked outdated (kept, never deleted).` +
+      (pub.trust_lowered.length ? ' Trust lowered: ' + pub.trust_lowered.map(t => `${t.villager} now trusts ${t.trusts_less} ${pct(t.trust)}`).join(', ') + '.' : '')));
+    parts.push(head, vBox);
+  }
+  parts.push(el('p', 'source', 'The case file lives in the graph (Case, Lead, Finding nodes), not in the investigator, so a replacement picks up exactly here. Click a lead or interview to find them on the map.'));
+  box.replaceChildren(...parts);
+
+  // On the map: dashed blue arrows from each investigator to the villagers they interviewed, with everyone else
+  // dimmed (unless a row on the board is picked).
+  clearCaseTrail();
+  if (!insightPick) {
+    highlight = { nodes: new Set([...investigators, ...f.interviews.flatMap(iv => iv.participant_ids)]) };
+    refresh();
+  }
+  for (const iv of f.interviews) {
+    const by = iv.participant_ids.find(id => investigators.has(id));
+    const who = iv.participant_ids.find(id => !investigators.has(id));
+    if (by && who && nodes.get(by) && nodes.get(who)) {
+      edges.update({ id: `case:${by}>${who}`, from: by, to: who, dashes: [6, 4], width: 2.5, physics: false,
+                     color: { color: COLORS.investigator }, arrows: { to: { scaleFactor: 0.6 } }, smooth: false });
+    }
+  }
+}
 
 function start() {
   network = new vis.Network(document.getElementById('graph'), { nodes, edges }, {
@@ -392,13 +661,16 @@ function start() {
     interaction: { hover: true, tooltipDelay: 150 },
     edges: { selectionWidth: 2 },
   });
-  // Lay the village out once, then hold still so new gossip doesn't make the map jump.
-  network.on('stabilizationIterationsDone', () => { network.setOptions({ physics: { enabled: false } }); network.fit(); });
+  // Lay the village out once, then hold still so new gossip doesn't make the map jump. ('stabilized' fires when the
+  // layout settles after nodes are added; 'stabilizationIterationsDone' only covers data present at construction.)
+  network.on('stabilized', () => { network.setOptions({ physics: { enabled: false } }); network.fit(); });
+  network.on('resize', () => network.fit());  // e.g. the legend wrapping onto a second line shrinks the map
   network.on('click', e => {
     if (e.nodes.length) openPerson(e.nodes[0]);
     else if (!e.edges.length && highlight) clearHighlight();
   });
   document.getElementById('back').onclick = closePerson;
+  for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => showTab(b.dataset.tab);
   document.getElementById('search').oninput = renderBeliefs;
   for (const id of ['show-news', 'show-friends']) document.getElementById(id).onchange = () => { since = null; seenFeed.clear(); poll(); };
   loadWorlds().then(poll).catch(e => { document.getElementById('live').classList.add('off'); console.error(e); });

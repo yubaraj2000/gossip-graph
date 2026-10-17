@@ -43,3 +43,48 @@ def test_missing_world_and_the_page(world_id):
     page = client.get("/ui")
     assert page.status_code == 200 and "Village memory" in page.text
     assert page.headers["cache-control"] == "no-store"
+
+
+def insights(world_id):
+    r = client.get(f"/worlds/{world_id}/insights")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_insights_show_the_village_structure(gossip):
+    out = insights(gossip)
+    assert out["hubs_based_on"] == "who learned from whom"  # gossip has flowed, so hubs come from news flow
+    assert {h["name"] for h in out["hubs"]} <= {"Bram", "Pip", "Mara", "Tom"}
+    assert not any(line.startswith("Suggested") for line in out["summary"])  # that line is for investigators
+
+
+def test_reputation_is_what_the_village_believes(gossip):
+    kai = next(r for r in insights(gossip)["reputation"] if r["name"] == "Kai")
+    assert kai["top_claim"] == "Kai stole a silver hammer from Bram"
+    assert kai["villagers_with_opinion"] == kai["think_badly"] == 4  # Bram, Pip, Mara and Tom
+    assert -1 <= kai["opinion"] < -0.15 and kai["words"] in ("bad", "very bad")
+
+
+def test_an_investigators_notes_are_not_village_opinion(gossip):
+    db.world_graph(gossip).query("MATCH (t:Character {id: 'p:4'}) CREATE (t)-[:INVESTIGATES]->(:Case {id: 'k1'})")
+    kai = next(r for r in insights(gossip)["reputation"] if r["name"] == "Kai")
+    assert kai["villagers_with_opinion"] == 3  # Tom now counts as an investigator
+
+
+def test_insights_for_a_missing_world(world_id):
+    assert client.get(f"/worlds/{world_id}/insights").status_code == 404
+
+
+def test_the_case_board_lists_cases_and_who_interviewed_whom(gossip):
+    case = {"id": "k_board", "title": "The missing silver hammer", "question": "Who took Bram's hammer?",
+            "investigator": {"id": "inv:vikram", "name": "Inspector Vikram", "kind": "human"}}
+    assert client.post(f"/worlds/{gossip}/cases", json=case).status_code == 200
+    assert client.post(f"/worlds/{gossip}/cases/k_board/interview", params={"target": "p:4"}).status_code == 200
+    listed = client.get(f"/worlds/{gossip}/cases").json()["cases"]
+    assert [(c["case"], c["status"], c["investigator"]) for c in listed] == [("k_board", "open", "Inspector Vikram")]
+    interview = client.get(f"/worlds/{gossip}/cases/k_board").json()["interviews"][0]
+    assert sorted(interview["participant_ids"]) == ["inv:vikram", "p:4"]  # the map draws Vikram -> Tom
+
+
+def test_no_cases_in_a_new_world(world_id):
+    assert client.get(f"/worlds/{world_id}/cases").json()["cases"] == []

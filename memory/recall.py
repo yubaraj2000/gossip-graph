@@ -134,7 +134,7 @@ def describe(r: dict, my_name: str, other_name: str) -> list[str]:
         lines.append(f"I {_trust_words(trust['trust'])} {other_name}; "
                      + (f"we've talked {talks} time(s)." if talks else "we haven't really talked yet."))
     if r["reputation"]["evidence"]:
-        lines.append(f"My impression of {other_name} is {_reputation_words(r['reputation']['score'])}.")
+        lines.append(f"My impression of {other_name} is {reputation_words(r['reputation']['score'])}.")
     if r["episodes"]:
         lines.append(f"Last time {other_name} and I talked: {r['episodes'][0]['summary']}")
     for d in r.get("debunked", []):
@@ -183,7 +183,7 @@ def _trust_words(t: float) -> str:
     return "don't fully trust"
 
 
-def _reputation_words(score: float) -> str:
+def reputation_words(score: float) -> str:
     if score <= -0.5:
         return "very bad"
     if score < -0.15:

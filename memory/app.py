@@ -81,6 +81,16 @@ def world_graph(world_id: str, since: float | None = None, limit: int = Query(40
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/worlds/{world_id}/insights")
+def world_insights(world_id: str) -> dict:
+    """Bridges, news hubs, circles and reputation for the whole village, computed live."""
+    _check_world_id(world_id)
+    try:
+        return view.insights(world_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @app.get("/worlds")
 def list_worlds() -> dict:
     return {"worlds": db.list_worlds()}
@@ -204,6 +214,13 @@ def open_case(world_id: str, case: CaseIn) -> dict:
     """Open a case: assign the investigator and write the briefing and first leads to the case file."""
     _check_world_id(world_id)
     return cases.open_case(world_id, case)
+
+
+@app.get("/worlds/{world_id}/cases")
+def list_cases(world_id: str) -> dict:
+    """Every case in the world, newest first."""
+    _check_world_id(world_id)
+    return {"world": world_id, "cases": cases.list_cases(world_id)}
 
 
 @app.get("/worlds/{world_id}/cases/{case_id}")
