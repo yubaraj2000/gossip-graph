@@ -19,7 +19,7 @@ def chat_json(system: str, user: str, schema: dict, model: str | None = None) ->
                 "model": model or settings.extract_model,
                 "stream": False,
                 "format": schema,
-                "options": {"temperature": 0},
+                "options": {"temperature": 0, "num_thread": settings.extract_threads},
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             },
             timeout=300,

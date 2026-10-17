@@ -11,6 +11,9 @@ class Settings:
     ollama_url: str = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11435")
     # Claim extraction runs once per finished conversation, so it can use the slower, better model.
     extract_model: str = os.environ.get("EXTRACT_MODEL", "llama3.1:8b")
+    # CPU threads for extraction. The dialogue model uses 24 (scripts/ollama-models.sh); 24 + 8 fills the box's 32,
+    # and more oversubscribes the CPU so both models crawl.
+    extract_threads: int = int(os.environ.get("EXTRACT_THREADS", "8"))
     # mxbai-embed-large, the same model AI Town uses
     embed_model: str = os.environ.get("EMBED_MODEL", "mxbai-embed-large")
     embedding_dim: int = int(os.environ.get("EMBEDDING_DIM", "1024"))
