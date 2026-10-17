@@ -1275,6 +1275,43 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 ---
 
+### Oct 17 — Village reset and demo rehearsal
+
+**✅ Reset** [AI] (16:03–16:06 IST):
+1. `testing:stop`, then `testing:wipeAllTables`. Every AI Town table was emptied and checked.
+2. `npx convex dev --once --typecheck enable`.
+3. `npx convex run init`, which created the new world **`m170ny8390cy9829q4br4bf9vd8gffbm`**.
+4. `seed_village.py`: 9 characters, 24 trust links.
+- **AI Town assigned the same player ids as before** (`p:0` Ramesh … `p:14` Sarla), so ids are deterministic for the same `characters.ts`.
+- The old graph `world_m171…` was **kept, not deleted**: it's a separate, inactive world now.
+- `background_village.py --fresh --good-deed` rebuilt `template_chandanpur` from the new world and re-copied `chandanpur_b` (10.1 ms). Isolation check ✅.
+- **The new graph starts clean:** 0 beliefs, only the 8 villagers. The duplicate inspector nodes, "Me" and the pre-filter junk are gone.
+
+**Rehearsal:**
+- The first 2 conversations were ingested about 9 minutes after init. Villagers wander, invite, walk over, and talk for 8 lines before extraction (~73 s) runs.
+- **16:15:03:** the narrator recorded the theft (`e_3e085b9652ec`, claim `k_7f76a6656372`, "Kabir stole a silver hammer from Ramesh"). Ramesh is the only witness.
+
+**🔬 Rehearsal results** (live, new world):
+
+| Time (IST) | What happened |
+|---|---|
+| 16:15:02 | Ramesh **saw** it (100%) |
+| 16:17:08 | Meera heard it from Ramesh (35%, gullibility 0.35): straight into the temple circle |
+| 16:19:25 | Gopal heard it from Ramesh (70%) |
+| 16:19:30 | Chotu heard it from Meera (32%), two hops |
+| 16:35:23 | Balwant heard it from **Gopal** (35%): the bridge carried it into the temple circle, two hops |
+
+- 5 believers 19 minutes after the theft. 15 conversations and 114 beliefs in the graph by 16:38.
+- **Investigator in town:**
+  - Vikram (`p:1411`): briefing (hubs Ramesh and Chotu, bridge Gopal), then interview 1 **Ramesh** ("I saw it with my own eyes"), interview 2 **Gopal** ("Ramesh told me"), then 💥 crash (exit 1). About 1.5 min.
+  - Anjali (`p:1498`, sprite f3): read the handoff (Vikram's 2 interviews, findings, next lead Meera), interviewed **Meera** ("Ramesh told me"), then published the verdict. About 1 min.
+  - ✅ The theft was confirmed (Ramesh saw it). No interview was repeated.
+- **❌ Problem found: self-gossip junk punished the eyewitness.** Ramesh also "testified" two claims extracted as said by Ramesh about Ramesh: "Ramesh knows everything that goes on in Chandanpur" and "Ramesh stole something from his own forge again". The verdict ruled both *unfounded, started by Ramesh*, so **trust in Ramesh was lowered**, although he is the honest eyewitness. This is the same class of mis-extraction as the old world's "Ramesh stole tools from the forge". Cause: `_validate` has no rule against a speaker being the subject of their own gossip; the 3B/8B extraction misreads reported speech and chatter.
+- **Investigation depth:** it took only 3 interviews. Ramesh, the source, was also the top news hub, so the briefing sent Vikram straight to the eyewitness. Believers further downstream (Balwant, Chotu) weren't interviewed, because the investigator follows sources upstream, not listeners downstream.
+- **Timing for the recording:** reset 3 min, first gossip 9 min, 5 believers 19 min after the theft, investigation about 2.5 min. **A full demo run takes about 35 minutes.**
+
+---
+
 ## Open questions
 
 - ✅ ~~4.6 scope~~ → `GRAPH.COPY` template village (Oct 17). Replay could be added on top.
