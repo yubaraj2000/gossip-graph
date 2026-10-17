@@ -79,3 +79,8 @@ export const DEFAULT_NAME = 'Me';
 
 // gossip-graph: players whose token starts with this are investigators driven by scripts/investigate.py.
 export const INVESTIGATOR_TOKEN_PREFIX = 'investigator:';
+
+// gossip-graph: at most this many villager conversations at once. The CPU LLM answers one request at a time, so each
+// extra conversation makes every line wait longer (measured Oct 17: 9.5 s with nothing else waiting, 25 s with two,
+// 46 s with four). Investigator interviews don't count: the villager's LLM stays quiet in them.
+export const MAX_NPC_CONVERSATIONS = 2;

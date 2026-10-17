@@ -8,6 +8,8 @@ import { point } from '../util/types';
 import { Descriptions } from '../../data/characters';
 import { AgentDescription } from './agentDescription';
 import { Agent } from './agent';
+import { npcConversationCount } from './conversationLimit';
+import { MAX_NPC_CONVERSATIONS } from '../constants';
 
 export const agentInputs = {
   finishRememberConversation: inputHandler({
@@ -62,7 +64,13 @@ export const agentInputs = {
         if (!invitee) {
           throw new Error(`Couldn't find player: ${inviteeId}`);
         }
-        Conversation.start(game, now, player, invitee);
+        // gossip-graph: keep walking instead of inviting while the town is at its conversation cap.
+        if (
+          npcConversationCount(game.world.conversations.values(), game.world.players) <
+          MAX_NPC_CONVERSATIONS
+        ) {
+          Conversation.start(game, now, player, invitee);
+        }
         agent.lastInviteAttempt = now;
       }
       if (args.destination) {
