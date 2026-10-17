@@ -1168,6 +1168,21 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 ---
 
+### Oct 17 — Phase 4 review checkpoint
+
+**✅ Done** [AI]+[me]. A plain-language recap was given in chat and added to `docs/WALKTHROUGH.md` as a Phase 4 section:
+- the idea (an investigator who knows nothing; minds stay private)
+- the structure-only briefing
+- interviews that follow the trail upstream
+- crash and resume through the case file
+- verdict and debunking (never deleting)
+- the investigator in the town
+- separate villages
+- the bugs fixed
+- the known extraction limit
+
+---
+
 ## Open questions
 
 - ✅ ~~4.6 scope~~ → `GRAPH.COPY` template village (Oct 17). Replay could be added on top.

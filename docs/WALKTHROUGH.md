@@ -234,3 +234,55 @@ Ramesh saw it happen."*
 
 **Fixed along the way:** a setup race when two NPCs report at once; "who told you" crediting a later source
 instead of the originator; honorifics ("Shastri ji", "Balwant Singh"); a service freeze on reload.
+
+---
+
+# Phase 4 — the investigator
+
+**The idea.** A new agent, Inspector Vikram, arrives knowing nothing and must find out what happened to Ramesh's
+hammer only by questioning villagers. Every mind stays private, including his: nobody, not even the
+investigator, reads the whole graph. One scene covers Track 2: memory that survives a crash, a handoff through
+shared state, and memory that gets corrected.
+
+**1. A briefing from structure only** (`POST /cases`). Before any interview, the graph says *who matters*, not
+*what they believe*: news hubs (PageRank over who-learned-from-whom), the bridge (betweenness: Gopal), and the
+circles (friend groups once the bridge is removed). That gives the first leads: Gopal, Lakshmi, Pandit Shastri.
+
+**2. Interviews follow the trail upstream** (`/interview`). A villager testifies only about case-relevant beliefs
+(vector distance to the case question < 0.40) and names only who told them *directly*. Each name becomes the next
+lead. Live: Gopal said "Ramesh told me", so Ramesh came next: "I saw it with my own eyes." The eyewitness was
+reached in interview 3, and every competing rumor was traced to whoever started it.
+
+**3. Crash and resume** (`/assign`). The case file (case, leads, findings) lives in the graph, not in the agent.
+Vikram's process dies after 2 interviews; Inspector Anjali starts fresh, reads a handoff summary built from the file,
+and continues with the next lead. No interview is repeated, and she doesn't inherit his beliefs (she starts with 0),
+only the shared case file.
+
+**4. Verdict and debunking** (`/verdict`), decided from the findings only:
+- *confirmed*: someone saw it
+- *distorted*: an honest garbling of the truth (distance < 0.27)
+- *unfounded*: someone started it and nobody saw it
+- *unresolved*: the trail ran out
+
+Debunked beliefs are marked superseded, **never deleted**. Whoever started an unfounded rumor loses half the trust
+of the people they misled. Villagers remember the correction, and a debunked rumor can't spread again:
+*"I used to believe that Ramesh stole two iron artifacts, but Inspector Anjali's inquiry found Lakshmi started it
+and nobody saw it."*
+
+**5. In the town** (4.7). The investigator walks up to villagers in AI Town, and the interview lines on screen are
+the case file, word for word.
+
+**6. Separate villages** (4.6). `GRAPH.COPY` of a village template (6 ms) starts a second Chandanpur with the same
+people and no history. Kabir is a thief in one village and a stranger (or a helper) in the other; nothing leaks
+between graphs.
+
+**Fixed along the way:**
+- talk densified the social graph, so lasting friendships became `FRIEND` edges
+- two different rumors were merged under one claim key
+- a true retelling was judged a lie
+- speculation ("perhaps…") was stored as a claim
+- the investigator crashed waiting for a busy villager; it now postpones that villager
+- upstream AI Town removed idle humans after 5 minutes
+
+**Known limit:** a mis-extracted line can still look like a rumor (one cost Ramesh some trust in the live world).
+Reset the village before recording.
