@@ -1231,6 +1231,48 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
   - A belief opened from the feed could fall outside the top 80 shown, or below the visible edge. It's now always listed and scrolled to the centre.
 - **Checked in Chrome** with real clicks: on Gopal, on a filtered belief ("bribes"), and on a feed line (Sarla: "Lakshmi told me. Lakshmi started it, and nobody saw it happen."). No console errors. pytest 114 pass.
 
+**✅ 5.3 Insights panel** [AI]
+- **`GET /worlds/{id}/insights`** (`memory/view.py`), 10–15 ms on the live world:
+  - **Structure:** the investigator's briefing (`cases.briefing`), computed live. Bridges come from `algo.betweenness` on `FRIEND`; news hubs from `algo.pageRank` on `LEARNED_FROM`, or on trust before any gossip; circles are the friend groups once the top bridge is removed. The summary sentences are included, minus "Suggested first interviews".
+  - **Reputation:** for each person, what the village believes about them. Each villager's opinion is the **average** of confidence × valence over their active beliefs about that person (−1 to +1). The village's view averages the villagers who have one, with counts of who thinks badly or well, plus the most widely believed claim about them. Investigators' notes are excluded.
+- **❌ → ✅ Sum vs average:** the first version summed each villager's beliefs (the same score as recall's personal impression). On the live world everyone came out "very bad", and **Ramesh (−7.5) looked worse than Kabir (−3.6)**, only because people talk about Ramesh more. With averages, **Kabir is the worst real person (−0.30, 7 of 8 villagers think badly)**, and the top-ranked "Me" is a leftover junk character the reset removes. `recall._reputation_words` became the public `reputation_words`.
+- **Page:** the side panel now has **tabs (Live feed | Insights)**. The Insights tab refreshes every 10 s while open. **Clicking any row** (a bridge, a hub, a circle, a reputation entry) lights those people up on the map; clicking again clears it. A footnote names the FalkorDB algorithms used.
+- **❌ → ✅ Map fixes found while testing:**
+  - The map never froze or fitted. vis-network's `stabilizationIterationsDone` only fires for data present at construction, so I now use `stabilized`, which also fits again on resize.
+  - After switching village, everyone was piled in the centre: the layout "settled" on the empty map just before the new nodes arrived. Physics now restarts only when a village's first nodes are drawn.
+- **Checked in Chrome:**
+  - Live world: Gopal is bridge 24, Lakshmi 13. The circles {Ramesh, Sarla, Chotu, Lakshmi} and {Meera, Balwant, Pandit Shastri}. Clicking Circle 2 lights its members.
+  - `chandanpur_b`: Kabir "very good · 1 well · most believed: Kabir helped Pandit Shastri carry the new temple bell". Hubs fall back to trust, since no gossip has flowed there.
+  - No console errors.
+- **Tests:** `tests/test_view.py` gained 4 cases: structure, reputation (Kai: 4 of 4 think badly), investigators excluded, 404. pytest **118 pass** (+2 opt-in live).
+
+**✅ 5.4 Case board** [AI]
+- **Backend:**
+  - `GET /worlds/{id}/cases` (`cases.list_cases`) lists every case, newest first, with whoever is on it now.
+  - Interviews in the case file now carry `participant_ids`, so the map knows who interviewed whom.
+  - Everything else comes from the existing case file (`GET /cases/{case}`).
+- **Page: a third tab, Case.** It shows the newest case by default, with a picker when there are several. It refreshes every 3 s and only re-renders when the file changed, which keeps the scroll position.
+  - title, question, an open/solved badge
+  - the team: "Inspector Vikram (left the case) → Inspector Anjali (on the case)"
+  - the structure-only briefing
+  - leads: ✓ done / ○ open, with kind (news hub, bridge, circle voice, named as a source, chosen) and reason
+  - interviews: "2. Inspector Vikram → Ramesh", with each testimony line (👁 / 👂 / 🗣)
+  - verdict: ✅ true / ✗ made up / 〰 garbled / ? unresolved, plus beliefs marked outdated and trust lowered
+- **Map while the Case tab is open:** dashed blue arrows from each investigator to the villagers they interviewed, with everyone outside the case dimmed. Clicking a lead or interview lights that person up.
+- **Live end-to-end check in Chrome** on a throwaway template copy (`ui_check`, deleted afterwards), with the page left open the whole time and **no reload**:
+  1. The empty state: "No investigation in this village yet".
+  2. A case was opened. Interviews with Gopal ("I haven't heard anything about that") and Ramesh ("I saw it with my own eyes") appeared within one poll.
+  3. **Assigned to Anjali:** the team line switched to "left the case → on the case", and her interview was added as #3.
+  4. The verdict appeared: "✅ True: Kabir stole a silver hammer from Ramesh. Ramesh saw it."
+
+  No console errors. On the live world's `case_hammer_demo`, the full Vikram → Anjali story and the verdict (1 true, 3 made up, 2 garbled, 22 beliefs outdated, trust lowered in Lakshmi and Ramesh) render correctly.
+- **❌ → ✅ Fixes:**
+  - An investigator who joined after the layout froze was dropped exactly on top of the previous one. The layout now restarts briefly whenever someone new appears.
+  - Claims without a final period ran into the verdict text ("…anvil Started by").
+- **Tests:** `tests/test_view.py` gained 2 cases: the case list with its investigator and interview participants, and no cases in a new world. pytest **120 pass** (+2 opt-in live).
+
+**Phase 5 complete:** live map and feed, "why do you think that?", insights, and the case board, all on one memory page next to the town.
+
 ---
 
 ## Open questions
