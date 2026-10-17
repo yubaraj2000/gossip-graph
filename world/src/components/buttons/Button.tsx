@@ -4,6 +4,7 @@ import { MouseEventHandler, ReactNode } from 'react';
 export default function Button(props: {
   className?: string;
   href?: string;
+  target?: string;
   imgUrl: string;
   onClick?: MouseEventHandler;
   title?: string;
@@ -16,6 +17,8 @@ export default function Button(props: {
         props.className,
       )}
       href={props.href}
+      target={props.target}
+      rel={props.target === '_blank' ? 'noreferrer' : undefined}
       title={props.title}
       onClick={props.onClick}
     >

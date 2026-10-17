@@ -13,6 +13,7 @@ import ReactModal from 'react-modal';
 import MusicButton from './components/buttons/MusicButton.tsx';
 import Button from './components/buttons/Button.tsx';
 import InteractButton from './components/buttons/InteractButton.tsx';
+import MemoryButton from './components/buttons/MemoryButton.tsx';
 import FreezeButton from './components/FreezeButton.tsx';
 import { MAX_HUMAN_PLAYERS } from '../convex/constants.ts';
 import PoweredByConvex from './components/PoweredByConvex.tsx';
@@ -96,6 +97,7 @@ export default function Home() {
               Star
             </Button>
             <InteractButton />
+            <MemoryButton />
             <Button imgUrl={helpImg} onClick={() => setHelpModalOpen(true)}>
               Help
             </Button>
