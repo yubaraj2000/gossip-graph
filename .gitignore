@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# scripts/up.sh: logs and pids of background processes
+.run/

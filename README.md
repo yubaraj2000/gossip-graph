@@ -177,34 +177,35 @@ Friend circles are the connected groups of `FRIEND` ties once the top bridge is 
 
 **Needs:** Docker, Node 20+ (we used 24), [uv](https://docs.astral.sh/uv/) (Python 3.12), and an Ollama server with `llama3.2:3b`, `llama3.1:8b` and `mxbai-embed-large` (`ollama pull` each; CPU works, a GPU is faster).
 
+**First time** (one-off configuration):
 ```bash
 git clone https://github.com/yubaraj2000/gossip-graph && cd gossip-graph
-docker compose up -d                      # FalkorDB on :6379, browser UI on :3000
-uv sync
+uv sync && (cd world && npm install)
 
-# Ollama: on this machine, point the service at it; on another machine, tunnel it to :11435
-export OLLAMA_URL=http://127.0.0.1:11434  # or: scripts/ollama-tunnel.sh watch  (edit OLLAMA_SSH_HOST)
-scripts/run_memory.sh                     # memory service on :8100 (check http://127.0.0.1:8100/health)
-
-cd world && npm install
-docker compose up -d backend dashboard    # self-hosted Convex on :3210/:3211
+cd world && docker compose up -d backend          # self-hosted Convex for AI Town (127.0.0.1:3210)
 docker compose exec backend ./generate_admin_key.sh
-# world/.env.local (gitignored):
+# create world/.env.local (gitignored) with:
 #   CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3210
 #   CONVEX_SELF_HOSTED_ADMIN_KEY=<the key printed above>
 #   VITE_CONVEX_URL=http://127.0.0.1:3210
 #   INVESTIGATOR_SECRET=<any random string>
-npx convex env set OLLAMA_HOST http://host.docker.internal:11434      # :11435 if tunnelled
+npx convex env set OLLAMA_HOST http://host.docker.internal:11434      # where Convex reaches Ollama
 npx convex env set OLLAMA_MODEL llama3.2:3b   # we used llama3.2:3b-t24 (scripts/ollama-models.sh): 24 CPU threads
 npx convex env set OLLAMA_EMBEDDING_MODEL mxbai-embed-large
 npx convex env set MEMORY_SERVICE_URL http://host.docker.internal:8100
 npx convex env set INVESTIGATOR_SECRET <the same random string>
-npx convex dev --once --typecheck enable && npx convex run init
-npx vite --host 127.0.0.1 --port 5173 &   # the town: http://127.0.0.1:5173/ai-town
-cd .. && uv run python scripts/seed_village.py   # personalities, trust and friendships
+cd ..
 ```
 
-Keep a tab on the town open (it sends the world's heartbeat). Then play the demo:
+**Every time: one command.**
+```bash
+OLLAMA_URL=http://127.0.0.1:11434 scripts/up.sh   # or set OLLAMA_SSH_HOST and let it tunnel a remote Ollama to :11435
+```
+`scripts/up.sh` starts FalkorDB, Convex, the memory service, the town page and (on macOS) a keep-awake hold, deploys the town's code, creates and seeds the village if there is none, and checks each part; it only starts what isn't already running. `scripts/up.sh status` checks without starting anything; `scripts/up.sh down` stops what it started. `scripts/reset_village.sh --yes` starts the village over (fresh world, seeded, plus the template and its background copy).
+
+Then open **http://127.0.0.1:5173/ai-town** and press **Memory** for the graph (**http://127.0.0.1:8100/ui**).
+
+Keep the town's tab open (it sends the world's heartbeat). Then play the demo:
 ```bash
 # the theft: only Ramesh sees it
 curl -X POST http://127.0.0.1:8100/worlds/<worldId>/events -H 'content-type: application/json' \
