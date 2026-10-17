@@ -1218,6 +1218,19 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - The view was cut off at the edges, so it's now fitted after layout.
 - The dropdown labelled the copied village "(live town)". Labels now come from the id format: Convex ids are 32 lowercase letters and digits.
 
+**✅ 5.2 "Why do you think that?"** [AI]
+- **No new backend.** The page calls the existing `GET /explain?holder=` (Q4). It takes 66 ms for Ramesh's 214 beliefs (140 KB) and 6 ms for one claim.
+- **Click a villager** on the map (or any line in the live feed) to open their panel: role, number of active beliefs, gullibility, and their beliefs sorted by |valence| × confidence, with a text filter. Each belief shows how they know it (saw it / heard it / said it first) and whether it traces to an eyewitness.
+- **Click a belief** to see the villager's answer, word for word from the graph path (`explain.sentence`), for example Gopal: *"Ramesh told me. Ramesh heard it from Pandit Shastri. Pandit Shastri started it, and nobody saw it happen."*
+  - A badge: ✓ traced to an eyewitness (and "it really happened" if grounded in an event), or ✗ nobody saw it, X started it.
+  - Each hop, with the exact line heard.
+  - **On the map:** the trail lights up, with arrows from speaker to listener. The strongest path is bright and others are thinner. Everyone else dims, and the person the claim is about is lit. People on the strongest trail show their confidence next to their name (**Pandit Shastri · 60% → Ramesh · 30% → Gopal · 21%**), so you can see doubt growing with each retelling.
+- **❌ → ✅ Fixes:**
+  - The confidence labels on the arrows were hidden under circles (vis-network draws nodes over edge labels), so they moved onto the names.
+  - The percentage ran into the text in the belief list, because the feed's styles were scoped to the feed only.
+  - A belief opened from the feed could fall outside the top 80 shown, or below the visible edge. It's now always listed and scrolled to the centre.
+- **Checked in Chrome** with real clicks: on Gopal, on a filtered belief ("bribes"), and on a feed line (Sarla: "Lakshmi told me. Lakshmi started it, and nobody saw it happen."). No console errors. pytest 114 pass.
+
 ---
 
 ## Open questions

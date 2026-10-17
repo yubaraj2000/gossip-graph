@@ -115,7 +115,7 @@ A new NPC, an inspector, joins knowing nothing and must solve a case ("Bram's si
 **Layout** ([me], Oct 17): a separate memory page served by the memory service (`/ui`), opened next to the town from a "Memory" button. AI Town's own UI stays as it is.
 
 - [x] **5.1** A graph panel next to the town showing beliefs appearing as gossip spreads: `/ui` + `GET /worlds/{id}/graph`.
-- [ ] **5.2** "Why do you think that?" highlights the provenance path.
+- [x] **5.2** "Why do you think that?" highlights the provenance path: click a villager (or a feed line), then a belief.
 - [ ] **5.3** An Insights panel: bridges, influencers, cliques, reputation per NPC.
 - [ ] **5.4** A case board: the investigator's briefing, leads (open/done), interviews and verdict, updating live.
 

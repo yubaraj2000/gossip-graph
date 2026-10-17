@@ -9,7 +9,7 @@
   :root {
     --bg: #1d1410; --panel: #2b1d16; --panel-2: #36261d; --line: #4a3427; --text: #f3e6d8; --muted: #b59c86;
     --villager: #e8a65d; --outsider: #9aa3ad; --investigator: #6fa8dc; --news: #f0b429; --friend: #6b5444;
-    --bad: #e06c5a; --good: #7cc47f; --flash: #fff3a0;
+    --bad: #e06c5a; --good: #7cc47f; --flash: #fff3a0; --dim: #4d3a2e;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
@@ -44,13 +44,33 @@
   #feed li { padding: 8px 12px; border-bottom: 1px solid var(--line); }
   #feed li.new { animation: arrive 2.5s ease-out; }
   @keyframes arrive { from { background: #5a4520; } to { background: transparent; } }
-  #feed .meta { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
-  #feed .claim { margin-top: 2px; }
-  #feed .claim.bad { border-left: 3px solid var(--bad); padding-left: 6px; }
-  #feed .claim.good { border-left: 3px solid var(--good); padding-left: 6px; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
+  .claim { margin-top: 2px; }
+  .claim.bad { border-left: 3px solid var(--bad); padding-left: 6px; }
+  .claim.good { border-left: 3px solid var(--good); padding-left: 6px; }
   #feed .heard { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 3px; }
   #feed .outdated { text-decoration: line-through; opacity: .6; }
   .empty { color: var(--muted); padding: 16px 12px; }
+  .view { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .view[hidden], #why[hidden] { display: none; }
+  button.link { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; padding: 0;
+                text-transform: none; letter-spacing: 0; }
+  button.link:hover { color: var(--text); }
+  #person-name { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 15px; }
+  .person-meta { padding: 6px 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+  #search { margin: 8px 12px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+            border-radius: 6px; padding: 5px 8px; font: inherit; }
+  #beliefs { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+  #beliefs li, #feed li { cursor: pointer; }
+  #beliefs li { padding: 7px 12px; border-bottom: 1px solid var(--line); }
+  #beliefs li:hover, #feed li:hover, #beliefs li.selected { background: var(--panel-2); }
+  #why { padding: 10px 12px; background: #3a2b17; border-bottom: 2px solid var(--line); }
+  #why .q { color: var(--muted); font-size: 12px; }
+  #why .say { font-size: 15px; margin: 4px 0; }
+  #why .ok { color: var(--good); } #why .no { color: var(--bad); }
+  #why ol { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+  #why li { margin-bottom: 4px; }
+  #why .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } #graph { height: 60vh; }
                               #feed { max-height: 50vh; } }
 </style>
@@ -75,11 +95,21 @@
       <span><i class="bar" style="background:var(--news)"></i>news flowed: each villager's top 2 sources (thicker = more)</span>
       <span><i class="bar" style="background:var(--friend)"></i>friends (they shape the layout)</span>
       <span>circle size = how much they believe</span>
+      <span>click a villager or a feed line: “why do you think that?”</span>
     </div>
   </section>
   <section>
-    <h2><span class="live" id="live"></span>Beliefs forming, live</h2>
-    <ul id="feed"><li class="empty">Waiting for gossip…</li></ul>
+    <div class="view" id="feed-view">
+      <h2><span class="live" id="live"></span>Beliefs forming, live</h2>
+      <ul id="feed"><li class="empty">Waiting for gossip…</li></ul>
+    </div>
+    <div class="view" id="person-view" hidden>
+      <h2><button class="link" id="back">← live feed</button><span id="person-name"></span></h2>
+      <div class="person-meta" id="person-meta"></div>
+      <div id="why" hidden></div>
+      <input id="search" type="search" placeholder="Filter beliefs…" aria-label="Filter beliefs">
+      <ul id="beliefs"></ul>
+    </div>
   </section>
 </main>
 <script>
@@ -88,7 +118,8 @@ const TOP_SOURCES = 2;
 const COLORS = { villager: '#e8a65d', outsider: '#9aa3ad', investigator: '#6fa8dc' };
 const params = new URLSearchParams(location.search);
 let world = params.get('world');
-let since = null, timer = null, network = null;
+let since = null, timer = null, network = null, lastData = null;
+let person = null, personBeliefs = [], highlight = null, selectedClaim = null;  // highlight: {nodes: Set} while a belief's trail is shown
 const nodes = new vis.DataSet(), edges = new vis.DataSet();
 const seenFeed = new Set();
 
@@ -121,6 +152,7 @@ async function loadWorlds() {
 }
 
 function switchWorld(w) {
+  closePerson();
   world = w; since = null; seenFeed.clear(); nodes.clear(); edges.clear();
   try { localStorage.setItem('memory-ui-world', w); } catch (e) {}
   document.getElementById('feed').replaceChildren(el('li', 'empty', 'Waiting for gossip…'));
@@ -129,10 +161,13 @@ function switchWorld(w) {
 }
 
 function nodeFor(c) {
-  const color = COLORS[c.role];
+  const lit = highlight?.nodes.has(c.id);
+  const color = highlight && !lit ? css('--dim') : COLORS[c.role];
   return {
-    id: c.id, label: c.name, shape: 'dot', size: 10 + Math.sqrt(c.beliefs) * 1.3,
-    color: { background: color, border: color, highlight: { background: color, border: '#fff' } },
+    borderWidth: lit ? 4 : 1,
+    id: c.id, label: highlight?.conf?.[c.id] != null ? `${c.name} · ${pct(highlight.conf[c.id])}` : c.name,
+    shape: 'dot', size: 10 + Math.sqrt(c.beliefs) * 1.3,
+    color: { background: color, border: lit ? css('--flash') : color, highlight: { background: color, border: '#fff' } },
     font: { color: css('--text'), size: 15, strokeWidth: 3, strokeColor: css('--bg') },
     title: `${c.name} · ${c.role}\n${c.beliefs} active beliefs · talked about in ${c.talked_about} claims` +
            (c.gullibility != null ? `\ngullibility ${c.gullibility}` : ''),
@@ -154,7 +189,7 @@ function render(data) {
       if (pairs.has(key)) continue;
       pairs.add(key);
       want.push({ id: 'friend:' + key, from: a, to: b, dashes: [4, 6], width: 1.5, smooth: false,
-                  color: { color: css('--friend') }, arrows: '', physics: true });
+                  color: { color: css('--friend'), opacity: highlight ? 0.3 : 1 }, arrows: '', physics: true });
     }
   }
   if (showNews) {
@@ -164,13 +199,13 @@ function render(data) {
     const top = Object.values(byListener).flatMap(fs => fs.sort((x, y) => y.count - x.count).slice(0, TOP_SOURCES));
     for (const f of top) {
       want.push({ id: `news:${f.from}>${f.to}`, from: f.from, to: f.to, width: 1 + Math.log2(1 + f.count) * 1.6,
-                  color: { color: css('--news'), opacity: 0.75 }, arrows: { to: { scaleFactor: 0.5 } },
+                  color: { color: css('--news'), opacity: highlight ? 0.05 : 0.75 }, arrows: { to: { scaleFactor: 0.5 } },
                   smooth: { type: 'curvedCW', roundness: 0.15 }, physics: false,
                   title: `${f.count}× news flowed` });
     }
   }
   const wantIds = new Set(want.map(e => e.id));
-  edges.remove(edges.getIds().filter(id => !wantIds.has(id) && !String(id).startsWith('flash:')));
+  edges.remove(edges.getIds().filter(id => !wantIds.has(id) && !/^(flash|path):/.test(String(id))));
   edges.update(want);
 
   const t = data.totals;
@@ -181,6 +216,7 @@ function render(data) {
 
 function feedItem(b, fresh) {
   const li = el('li', fresh ? 'new' : null);
+  li.onclick = () => openPerson(b.holder, b.claim);
   const who = b.origin === 'witnessed' ? `👁 ${b.holder_name} saw it`
             : b.origin === 'heard' ? `👂 ${b.holder_name} heard it from ${b.from_name ?? 'someone'}`
             : `🗣 ${b.holder_name} started saying`;
@@ -226,6 +262,7 @@ async function poll() {
   try {
     const first = since === null;
     const data = await api(`/worlds/${encodeURIComponent(world)}/graph` + (first ? '' : `?since=${since}`));
+    lastData = data;
     render(data);
     addFeed(data.feed, first);
     since = data.feed.length ? Math.max(since ?? 0, ...data.feed.map(b => b.at)) : (since ?? data.now);
@@ -235,6 +272,115 @@ async function poll() {
   }
   timer = setTimeout(poll, POLL_MS);
 }
+
+// ---- 5.2 "Why do you think that?": a villager's beliefs, and the trail behind one of them ----
+const ICON = { witnessed: '👁', heard: '👂', self: '🗣' };
+
+async function openPerson(id, claim) {
+  person = id;
+  const c = lastData?.characters.find(x => x.id === id);
+  document.getElementById('feed-view').hidden = true;
+  document.getElementById('person-view').hidden = false;
+  document.getElementById('person-name').textContent = c?.name ?? id;
+  document.getElementById('person-meta').textContent = c ? `${c.role} · ${c.beliefs} active beliefs` +
+    (c.gullibility != null ? ` · gullibility ${c.gullibility} (how easily they believe gossip)` : '') : '';
+  document.getElementById('search').value = '';
+  document.getElementById('beliefs').replaceChildren(el('li', 'empty', 'Loading…'));
+  const data = await api(`/worlds/${encodeURIComponent(world)}/explain?holder=${encodeURIComponent(id)}`);
+  if (person !== id) return;  // another villager was clicked meanwhile
+  const weight = b => Math.abs(b.valence) * b.confidence;
+  personBeliefs = data.beliefs.sort((a, b) => weight(b) - weight(a));
+  renderBeliefs();
+  const pick = claim && personBeliefs.find(b => b.claim === claim);
+  if (pick) showWhy(pick); else { clearHighlight(); highlight = { nodes: new Set([id]) }; refresh(); }
+}
+
+function renderBeliefs() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const shown = personBeliefs.filter(b => !q || b.text.toLowerCase().includes(q)).slice(0, 80);
+  const open = personBeliefs.find(b => b.claim === selectedClaim);
+  if (open && !shown.includes(open)) shown.unshift(open);  // the belief being explained is always listed
+  const list = document.getElementById('beliefs');
+  if (!shown.length) { list.replaceChildren(el('li', 'empty', personBeliefs.length ? 'No match.' : 'Believes nothing yet.')); return; }
+  list.replaceChildren(...shown.map(b => {
+    const li = el('li', b.claim === selectedClaim ? 'selected' : null);
+    li.dataset.claim = b.claim;
+    const meta = el('div', 'meta');
+    meta.append(el('span', null, `${ICON[b.origin] ?? ''} ${b.origin === 'witnessed' ? 'saw it' : b.origin === 'heard' ? 'heard it' : 'said it first'}` +
+                                  (b.verdict === 'witnessed' && b.origin !== 'witnessed' ? ' · traced to an eyewitness' : '')),
+                el('span', null, pct(b.confidence)));
+    li.append(meta, el('div', 'claim ' + (b.valence < 0 ? 'bad' : b.valence > 0 ? 'good' : ''), b.text));
+    li.onclick = () => showWhy(b);
+    return li;
+  }));
+}
+
+function showWhy(b) {
+  selectedClaim = b.claim;
+  renderBeliefs();
+  document.querySelector('#beliefs li.selected')?.scrollIntoView({ block: 'center' });
+  const best = b.paths[0];
+  const holderName = document.getElementById('person-name').textContent;
+  const why = document.getElementById('why');
+  const head = el('div', 'row');
+  const clear = el('button', 'link', 'clear ✕');
+  clear.onclick = clearHighlight;
+  head.append(el('div', 'q', `Why do you think “${b.text}”?`), clear);
+  const root = best ? best.steps[best.steps.length - 1] : null;
+  const badge = b.verdict === 'witnessed'
+    ? el('div', 'ok', `✓ traced to an eyewitness${b.grounded ? ' · it really happened' : ''}`)
+    : el('div', 'no', `✗ nobody saw it: ${root?.name ?? 'someone'} started it`);
+  const steps = el('ol');
+  for (const st of best?.steps ?? []) {
+    steps.append(el('li', null, st.heard_from_name
+      ? `${st.name} (${pct(st.confidence)}) heard it from ${st.heard_from_name}` + (st.heard_line ? `: “${st.heard_line.replace(/^"|"$/g, '').slice(0, 150)}”` : '')
+      : `${st.name} (${pct(st.confidence)}) ${best.root_origin === 'witnessed' ? 'saw it happen' : 'said it first'}`));
+  }
+  why.replaceChildren(head, el('div', 'say', `${holderName}: “${b.sentence}”`), badge, steps);
+  why.hidden = false;
+  drawTrail(b);
+}
+
+// The strongest trail is drawn bright, other trails thinner; each arrow runs speaker -> listener. People on the
+// strongest trail show how sure they are next to their name, so the confidence fading along the chain is visible.
+// (Edge labels would be hidden: vis-network draws nodes over them.)
+function drawTrail(b) {
+  edges.remove(edges.getIds().filter(id => String(id).startsWith('path:')));
+  const lit = new Set([person, b.subject]);
+  const added = new Set();
+  b.paths.forEach((p, k) => {
+    p.chain.forEach(h => lit.add(h));
+    for (let i = 0; i + 1 < p.chain.length; i++) {
+      const id = `path:${p.chain[i + 1]}>${p.chain[i]}`;
+      if (added.has(id)) continue;
+      added.add(id);
+      edges.add({ id, from: p.chain[i + 1], to: p.chain[i], width: k === 0 ? 7 : 3, physics: false,
+                  color: { color: k === 0 ? css('--flash') : '#c9a227' }, arrows: { to: { scaleFactor: 0.9 } },
+                  smooth: { type: 'curvedCW', roundness: 0.15 } });
+    }
+  });
+  const conf = Object.fromEntries((b.paths[0]?.steps ?? []).map(st => [st.holder, st.confidence]));
+  highlight = { nodes: lit, conf };
+  refresh();
+}
+
+function clearHighlight() {
+  highlight = null;
+  edges.remove(edges.getIds().filter(id => String(id).startsWith('path:')));
+  document.getElementById('why').hidden = true;
+  selectedClaim = null;
+  for (const li of document.querySelectorAll('#beliefs li.selected')) li.classList.remove('selected');
+  refresh();
+}
+
+function closePerson() {
+  person = null;
+  document.getElementById('person-view').hidden = true;
+  document.getElementById('feed-view').hidden = false;
+  clearHighlight();
+}
+
+function refresh() { if (lastData) render(lastData); }
 
 function start() {
   network = new vis.Network(document.getElementById('graph'), { nodes, edges }, {
@@ -248,6 +394,12 @@ function start() {
   });
   // Lay the village out once, then hold still so new gossip doesn't make the map jump.
   network.on('stabilizationIterationsDone', () => { network.setOptions({ physics: { enabled: false } }); network.fit(); });
+  network.on('click', e => {
+    if (e.nodes.length) openPerson(e.nodes[0]);
+    else if (!e.edges.length && highlight) clearHighlight();
+  });
+  document.getElementById('back').onclick = closePerson;
+  document.getElementById('search').oninput = renderBeliefs;
   for (const id of ['show-news', 'show-friends']) document.getElementById(id).onchange = () => { since = null; seenFeed.clear(); poll(); };
   loadWorlds().then(poll).catch(e => { document.getElementById('live').classList.add('off'); console.error(e); });
 }
