@@ -6,11 +6,13 @@ Assumes a single service process: at startup, any 'ingesting' conversation is tr
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 
-from memory import cases, db, explain, ingest, llm, narrate, recall, templates
+from memory import cases, db, explain, ingest, llm, narrate, recall, templates, view
 from memory.config import settings
 from memory.models import CaseIn, CharacterIn, ConversationIn, EventIn, RelationshipIn, TemplateIn
 
@@ -58,6 +60,25 @@ def health() -> dict:
     except Exception:
         falkordb_ok = False
     return {"falkordb": falkordb_ok, "ollama": _ollama_version()}
+
+
+UI = Path(__file__).parent / "ui" / "index.html"
+
+
+@app.get("/ui", include_in_schema=False)
+def memory_page() -> FileResponse:
+    """The memory page (Phase 5): the graph behind the town, live. Open /ui?world=<id>."""
+    return FileResponse(UI, headers={"Cache-Control": "no-store"})  # always the current page after an edit
+
+
+@app.get("/worlds/{world_id}/graph")
+def world_graph(world_id: str, since: float | None = None, limit: int = Query(40, ge=1, le=200)) -> dict:
+    """Characters, friendships, news flow and totals, plus the beliefs formed since `since` (ms)."""
+    _check_world_id(world_id)
+    try:
+        return view.graph(world_id, since, limit)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.get("/worlds")
