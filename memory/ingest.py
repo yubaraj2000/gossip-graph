@@ -308,6 +308,12 @@ def _validate(raw_claims: list[dict], msgs: list[dict], people: dict[str, str]) 
         if subject is None:
             dropped.append({**rc, "reason": "unknown subject"})
             continue
+        if subject == msgs[idx]["author"]:
+            # People don't spread gossip about themselves. When the model makes the speaker the subject, it has
+            # misread reported speech or chatter ("Ramesh stole something from his own forge", said by Ramesh), and a
+            # verdict would then wrongly blame the speaker as the rumor's starter (seen in the Oct 17 rehearsal).
+            dropped.append({**rc, "reason": "speaker is the subject"})
+            continue
         if NOT_A_STATEMENT.match(text) or text.endswith("?") or text[:1].islower():
             # instructions/plans, questions, and lowercase fragments ("does that mean you've got it fixed…")
             dropped.append({**rc, "reason": "not a statement"})

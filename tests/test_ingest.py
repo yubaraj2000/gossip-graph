@@ -150,3 +150,15 @@ def test_questions_and_fragments_are_not_claims():
          "text": "Perhaps Tom noticed anything unusual at the forge"},
     ], msgs, people)
     assert [d["reason"] for d in dropped] == ["not a statement"] * 3
+
+
+def test_nobody_starts_gossip_about_themselves(village):
+    """Seen in the Oct 17 rehearsal: "Ramesh stole something from his own forge", extracted as said by Ramesh, was
+    ruled an unfounded rumor started by Ramesh, and cost the honest eyewitness trust."""
+    world_id, scripted, _ = village
+    scripted["c:1"] = [{"message_index": 0, "subject": "Bram", "predicate": "did", "object": "", "valence": -0.8,
+                        "text": "Bram stole something from his own forge again"},
+                       {"message_index": 0, **THEFT}]
+    out = ingest.ingest_conversation(world_id, two_way("c:1", "p:1", "p:2", "They say I'm careless, but Kai stole it!"))
+    assert [c["text"] for c in out["claims"]] == ["Kai stole a silver hammer from Bram"]
+    assert belief(world_id, "p:1", "Bram stole something from his own forge again") is None

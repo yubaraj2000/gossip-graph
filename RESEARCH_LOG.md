@@ -1310,6 +1310,11 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - **Investigation depth:** it took only 3 interviews. Ramesh, the source, was also the top news hub, so the briefing sent Vikram straight to the eyewitness. Believers further downstream (Balwant, Chotu) weren't interviewed, because the investigator follows sources upstream, not listeners downstream.
 - **Timing for the recording:** reset 3 min, first gossip 9 min, 5 believers 19 min after the theft, investigation about 2.5 min. **A full demo run takes about 35 minutes.**
 
+**✅ Fix: no self-gossip** [AI, approved by me]
+- `ingest._validate` now drops any extracted claim whose subject is the person saying it (reason "speaker is the subject"). This is separate from "no self-adoption": that rule stops a listener adopting a claim about themselves, while this one stops the claim being created at all.
+- Regression test `test_nobody_starts_gossip_about_themselves`: the rehearsal's "Bram stole something from his own forge again", said by Bram, is dropped, while the theft claim in the same line is kept. pytest **121 pass**.
+- The rehearsal world keeps the claims made before the fix. The recording run starts from a fresh reset anyway.
+
 ---
 
 ## Open questions

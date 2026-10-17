@@ -95,6 +95,7 @@ graph LR
 - **Echo guard:** hearing your own rumor back adds nothing. If the speaker's belief is downstream of the listener's (`(sb)-[:HEARD_FROM*1..8]->(listener's belief)`), it's skipped.
 - **Repeat guard:** hearing the same claim again from the *same* speaker belief doesn't raise confidence. Only independent sources do.
 - **No self-adoption:** a character never adopts a claim about themselves.
+- **No self-gossip:** a claim whose subject is the speaker is dropped at extraction. People don't spread rumors about themselves; when the model makes the speaker the subject, it has misread reported speech or chatter, and a verdict would otherwise blame the speaker as the rumor's starter.
 - **Acquaintance:** talking creates `KNOWS` edges in both directions. On first contact, trust is the truster's `gullibility`.
 - **Failure handling:**
   - The transcript is stored *before* the LLM step, so the episode is never lost.
