@@ -1183,10 +1183,47 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 ---
 
+### Oct 17 — Phase 5: make the graph visible
+
+**Layout decision** [me chose option A of two offered by AI]: a **separate memory page** served by the memory service, opened next to the town. The alternative was panels inside AI Town's 384 px sidebar (about 6–8 h, deeper React changes, CORS). The separate page took about 4–5 h, leaves the town untouched, and maps each panel to Cypher queries we can show in the README.
+
+**✅ 5.1 Live graph panel** [AI]
+- **`GET /worlds/{id}/graph[?since=ms]`** (`memory/view.py`):
+  - characters with role (villager / outsider / investigator), active beliefs, and how many claims are about them
+  - `FRIEND` edges, and `LEARNED_FROM` news flow (drawn speaker → listener, with a count)
+  - totals: active and outdated beliefs, claims, ingested conversations
+  - the beliefs formed since `since`, newest first, each with who it came from and the exact line heard (the same query shape as `scripts/live_feed.py`)
+- **Filtered out:** humans who hold no beliefs and aren't talked about, such as a visitor's town avatar.
+- **`GET /ui`** serves `memory/ui/index.html`: one page with vis-network 9.1.9 from unpkg and no build step. It polls every 3 s.
+  - **Map:** circle size = how much a villager believes. Only `FRIEND` edges drive the layout, so the market circle, the temple circle and Gopal the bridge show up as shapes. News arrows show each listener's top 2 sources, because after hours of talk the full `LEARNED_FROM` graph (64 edges among 8 villagers) is a hairball. The layout is fixed with a seed, settles, then holds still.
+  - **Live feed:** "👂 Chotu heard it from Gopal: … 54%", with the quoted line, colored by valence; outdated beliefs are struck through.
+  - **Each new belief flashes** its speaker → listener link and the listener's circle.
+  - **Village dropdown:** AI Town worlds, `chandanpur_b`, and others; `test_` graphs are hidden.
+- **AI Town:** a **Memory** button in the footer (`MemoryButton.tsx`, a pixel icon `assets/memory.svg`) opens `/ui?world=<current world>` in a new tab. `Button.tsx` gained an optional `target`.
+- **Tests:** `tests/test_view.py`, 4 cases:
+  - map roles and news flow
+  - the feed says who heard what from whom, with the exact line, and `since` returns only what's new
+  - silent strangers stay off the map
+  - 404, and the page is served with `no-store`
+- **Results:** pytest 114 pass (+2 opt-in live); AI Town 56/56.
+
+**Checked in Chrome:**
+- The live world draws 14 characters (including leftover duplicate investigator nodes, to be removed by the reset).
+- `chandanpur_b` shows the clean seeded structure and the single "Kabir helped Pandit Shastri" belief.
+- Replaying the last 6 beliefs as new showed the flashes and feed animation working. No console errors.
+
+**❌ → ✅ Fixes while building:**
+- The browser kept serving the old page after edits, so `/ui` now sends `Cache-Control: no-store`.
+- The first layout was a hairball where every edge pulled on the nodes. Now only friendships do, and news arrows are limited to each listener's top 2 sources.
+- The view was cut off at the edges, so it's now fitted after layout.
+- The dropdown labelled the copied village "(live town)". Labels now come from the id format: Convex ids are 32 lowercase letters and digits.
+
+---
+
 ## Open questions
 
 - ✅ ~~4.6 scope~~ → `GRAPH.COPY` template village (Oct 17). Replay could be added on top.
-- 🔬 **Phase 5 form:** a separate small web page served by the memory service (graph and case board) vs. panels inside AI Town's React UI. Leaning toward a standalone page next to the town, to avoid deep AI Town UI changes.
+- ✅ ~~Phase 5 form~~ → a separate memory page (`/ui`) next to the town (Oct 17).
 - 💡 **Report upstream to FalkorDB (optional):**
   - (a) An OPTIONAL MATCH after `OPTIONAL MATCH … WITH <aggregation>` silently matched nothing (step 2.4).
   - (b) `algo.labelPropagation` grouped unconnected nodes on the village graph (step 3.2).
