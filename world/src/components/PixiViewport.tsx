@@ -30,6 +30,13 @@ export default PixiComponent('Viewport', {
     if (viewportRef) {
       viewportRef.current = viewport;
     }
+    // gossip-graph: upstream's zoom-out limit showed only about half the map's width. Allow zooming out until the
+    // whole town fits (same map, drawn smaller, never stretched), but still open at upstream's zoom.
+    const startScale = (1.04 * props.screenWidth) / (props.worldWidth / 2);
+    const fitScale = Math.min(
+      props.screenWidth / props.worldWidth,
+      props.screenHeight / props.worldHeight,
+    );
     // Activate plugins
     viewport
       .drag()
@@ -39,9 +46,13 @@ export default PixiComponent('Viewport', {
       .clamp({ direction: 'all', underflow: 'center' })
       .setZoom(-10)
       .clampZoom({
-        minScale: (1.04 * props.screenWidth) / (props.worldWidth / 2),
+        minScale: startScale,
         maxScale: 3.0,
       });
+    if (fitScale > 0 && fitScale < startScale) {
+      // Replaces the plugin above; the view has already been clamped to startScale.
+      viewport.clampZoom({ minScale: fitScale, maxScale: 3.0 });
+    }
     return viewport;
   },
   applyProps(viewport, oldProps: any, newProps: any) {

@@ -1118,7 +1118,10 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - **The lag is about 40% shorter, and the worst stalls are gone** (53 s → 19 s).
 - **The number of lines per minute is unchanged,** so gossip spreads as fast as before. The CPU did the same amount of work; it was just queued less.
 
-**UI note:** the town view can only zoom out to about half the map's width (`PixiViewport.tsx`: `minScale = 1.04 × screenWidth / (worldWidth / 2)`). The map is 64 × 48 tiles (2,048 × 1,536 px), and the page frame is capped at 1,400 px under a large title. The fix is page-only and doesn't touch the backend.
+**✅ Whole map viewable** [me asked whether the town showed the full map; AI checked]:
+- **It didn't.** The map is 64 × 48 tiles (2,048 × 1,536 px), but upstream's zoom-out limit (`PixiViewport.tsx`: `minScale = 1.04 × screenWidth / (worldWidth / 2)`) showed at most about half its width. The default view showed only the top-left corner (tents and the waterfall).
+- **Fix** (page only, no backend change): the zoom-out limit is now "the whole town fits" (`min(screenWidth / worldWidth, screenHeight / worldHeight)`). It's the same map drawn smaller and never stretched. The page still opens at upstream's zoom; scroll or pinch out to see the whole town.
+- Checked in Chrome: zoomed fully out, the whole town is visible (both tents, the waterfall and river, the three windmills, the pond). `tsc` is clean.
 
 ---
 
