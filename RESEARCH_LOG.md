@@ -1046,6 +1046,82 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 ---
 
+### Oct 17 — Why the town feels laggy (measurement)
+
+**Question** [me]: the simulation feels laggy. Should we switch to, or borrow from, Stanford's Smallville (`joonspk-research/generative_agents`)?
+
+**Smallville vs AI Town** [AI]:
+- Smallville is **turn-based**: each step is 10 game-seconds, and every agent makes several LLM calls per step (perceive, plan, react, reflect, talk) before the page moves on. AI Town walks characters without the LLM and only calls it for dialogue. **On our CPU LLM, Smallville would be slower, not faster.**
+- It hasn't changed since Aug 2023, it's built on retired OpenAI models, and its memory is JSON files (it would need ripping out, as AI Town's did).
+- **Decision:** stay on AI Town. The idea worth borrowing is Smallville's **replay mode** (compute first, play back smoothly), which fits the planned 4.6 replay village and the demo video.
+
+**🔬 Measurement** [AI]: `scripts/llm_timing.py proxy` sits on 127.0.0.1:11435 (the port the apps already use) and forwards to the SSH tunnel moved to 11437, logging every Ollama call with no config changes. A 15-minute run with the current world (8 villagers):
+
+| Calls | n | Median | p90 | Max |
+|---|---|---|---|---|
+| Dialogue `llama3.2:3b` (AI Town) | 72 | 18.6 s | 31.2 s | 57.3 s |
+| Extraction `llama3.1:8b` (memory service, once per conversation) | 8 | 82.7 s | 135.5 s | 135.5 s |
+| Embeddings `mxbai-embed-large` | 8 | 0.4 s | 1.0 s | 1.0 s |
+
+- **What the viewer sees:** 72 chat lines in 11 conversations, with a median **19.1 s** gap between lines (p90 33 s, max 53 s). Almost all of it is LLM time; the engine, recall (~2 ms) and the network are negligible.
+- **Dialogue line time vs calls already in flight:** 0 → 9.5 s, 1 → 14.0 s, 2 → 24.8 s, 3 → 25.3 s, 4 → 45.6 s.
+- **Dialogue while an extraction ran:** median 22.0 s (p90 48.5 s) vs 15.8 s without one.
+- **Prompt sizes:** dialogue prompts median **1,020 tokens** in (max 1,339), 63 tokens out (max 211). Extraction prompts 622–1,233 tokens in, ~360 out.
+
+**🔬 CPU benchmark** (world paused; `llama3.2:3b`, an 866-token prompt, 64 tokens out, native `/api/chat`):
+
+| Threads | Reading the prompt | Writing the reply | Total |
+|---|---|---|---|
+| default (= 8) | 4.8 s (180 tok/s) | 3.0 s (21.6 tok/s) | 8.0 s |
+| 16 | 3.7 s (240 tok/s) | 2.3 s (28 tok/s) | 6.1 s |
+| 24 | 3.3 s (262 tok/s) | 2.2 s (29 tok/s) | **5.8 s** |
+
+- **Two requests at once run strictly one after the other** (8 s, then 16.6 s). The Ubuntu Ollama serves one request at a time, so with 3–4 conversations going, each line waits behind the others, and an 83 s extraction blocks every conversation.
+
+**Findings:**
+1. **The queue is the main cause:** one model call at a time, with several conversations plus extraction sharing it.
+2. **~60% of each dialogue call is reading the ~1,000-token prompt,** not writing the reply.
+3. **24 threads is ~28% faster** than Ollama's default 8 on the i9-13900K.
+
+**Decision** [me]: apply the thread and concurrency fixes, but **keep the full prompt**. Less context would make the villagers' lines less grounded in what they remember.
+
+**🔬 Thread split with both models running at once** (world paused; a dialogue line while a 200-token extraction runs):
+
+| Threads (dialogue / extraction) | Dialogue alone | Dialogue during extraction | Extraction |
+|---|---|---|---|
+| 8 / 8 (default) | 8.7 s | 16.0 s, 10.4 s | 24.3 s |
+| **24 / 8** | **6.1 s** | **9.0 s, 8.6 s** | 26.0 s |
+| 16 / 16 | 6.6 s | 16.1 s, 7.9 s | 21.8 s |
+| 24 / 24 | 6.1 s | ❌ **135.2 s**, 11.0 s | 143.9 s |
+| 16 / 8 | 6.8 s | 8.8 s, 8.9 s | 25.7 s |
+
+- The two models run as separate processes on the same CPU. 24 + 24 threads on 32 logical CPUs oversubscribes it, and both crawl.
+
+**✅ Fix A** [AI]:
+- **Dialogue model with 24 threads:** `scripts/ollama-models.sh` creates `llama3.2:3b-t24` (`llama3.2:3b` plus `num_thread 24`). AI Town calls the OpenAI-compatible endpoint, which can't pass options, so a model variant is the way to set it. Convex env `OLLAMA_MODEL=llama3.2:3b-t24`.
+- **Extraction pinned to 8 threads:** `EXTRACT_THREADS` (default 8) in `memory/config.py`, passed by `memory/llm.py`. This keeps the total at 32.
+- **At most 2 villager conversations at once:** `MAX_NPC_CONVERSATIONS = 2` (`world/convex/constants.ts`).
+  - Checked inside the engine's `finishDoSomething` input, so it's race-free. At the cap, an agent keeps walking and retries after the usual cooldown.
+  - Investigator interviews don't count, since the villager's LLM stays quiet in them (`aiTown/conversationLimit.ts`, plus 3 jest tests).
+- **Tests:** pytest 104 pass (+2 opt-in live). AI Town 56/56 with `npm test`.
+  - ⚠️ Running bare `npx jest` caches the wrong module format and breaks every suite; clear the cache and use `npm test`.
+
+**Before vs after** (15 minutes each, same world):
+
+| | Before | After |
+|---|---|---|
+| **Gap between chat lines (what you see)** | median **19.1 s**, p90 33.1 s, max 53.4 s | median **12.0 s**, p90 16.9 s, max 19.3 s |
+| Dialogue call | median 18.6 s, p90 31.2 s, max 57.3 s | median 9.8 s, p90 14.6 s, max 24.5 s |
+| Chat lines per 15 min | 72 (11 conversations) | 70 (10 conversations) |
+| Extraction | median 82.7 s | median 87.3 s (still in the background) |
+
+- **The lag is about 40% shorter, and the worst stalls are gone** (53 s → 19 s).
+- **The number of lines per minute is unchanged,** so gossip spreads as fast as before. The CPU did the same amount of work; it was just queued less.
+
+**UI note:** the town view can only zoom out to about half the map's width (`PixiViewport.tsx`: `minScale = 1.04 × screenWidth / (worldWidth / 2)`). The map is 64 × 48 tiles (2,048 × 1,536 px), and the page frame is capped at 1,400 px under a large title. The fix is page-only and doesn't touch the backend.
+
+---
+
 ## Open questions
 
 - 🔬 **4.6 scope:** a replay village from recorded conversations? A `GRAPH.COPY` template village?
