@@ -22,7 +22,9 @@ def convex(function: str, args: dict | None = None):
     return json.JSONDecoder().raw_decode(out[start:])[0]
 
 
-def main(village_file: Path) -> None:
+def village_payload(village_file: Path) -> tuple[str, dict, dict, list[dict], list[dict]]:
+    """The village file mapped onto the live AI Town world: (world id, village, name -> player id, characters,
+    trust links), in the shape the memory service takes."""
     village = json.loads(village_file.read_text())
     world_id = convex("world:defaultWorldStatus")["worldId"]
     players = {d["name"]: d["playerId"]
@@ -38,6 +40,11 @@ def main(village_file: Path) -> None:
                     "gullibility": o["gullibility"]} for o in village.get("outsiders", [])]
     relationships = [{"source": players[r["from"]], "target": players[r["to"]], "trust": r["trust"]}
                      for r in village["relationships"]]
+    return world_id, village, players, characters, relationships
+
+
+def main(village_file: Path) -> None:
+    world_id, village, players, characters, relationships = village_payload(village_file)
     with httpx.Client(base_url=MEMORY_SERVICE, timeout=30) as http:
         http.post(f"/worlds/{world_id}").raise_for_status()
         http.post(f"/worlds/{world_id}/characters", json=characters).raise_for_status()
