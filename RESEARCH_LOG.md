@@ -1125,9 +1125,52 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 
 ---
 
+### Oct 17 — 4.6 Separate villages: template copy
+
+**Choice** [me, after AI explained both options]: copy a village template rather than replay recorded conversations into a new village. A template copy gives the same people and relationships with no history, needs no LLM, and is ready instantly. Replay gives the copy a history but costs ~85 s of extraction per conversation on the live town's CPU. Replay can be added on top later.
+
+**🔬 Checked first on a throwaway graph** [AI]:
+- `GRAPH.COPY` took 6 ms and kept all 9 indexes, including the 1024-d vector index.
+- The copy is independent: a node written to it doesn't appear in the source.
+- Copying onto an existing graph fails (`destination key already exists`), so a live village can't be overwritten by accident.
+
+**✅ Built** [AI]:
+- **`memory/templates.py`:** `create` (replaces an older template) and `start_world` (`GRAPH.COPY`).
+- **`memory/db.py`:** a `template_` prefix, so templates never appear as worlds (the retry loop and `/worlds` ignore them). The schema helpers now work on any graph. `delete_world` also forgets the "schema ready" cache, so a re-created world gets its indexes again.
+- **Endpoints:** `POST /templates/{name}`, `GET /templates`, `POST /worlds/{id}/from-template/{name}` (404 if the template is missing, 409 if the world exists), `DELETE /worlds/{id}`.
+- **Counts use three separate queries,** avoiding the OPTIONAL-MATCH-after-aggregation quirk (step 2.4).
+- **`scripts/background_village.py [--world chandanpur_b] [--fresh] [--good-deed]`:**
+  1. Builds `template_chandanpur` from `village/chandanpur.json`, mapped to the live world's player ids, so each person has the same id in every village. `seed_village.py`'s mapping is now the shared `village_payload`.
+  2. Copies the template into the background village.
+  3. Optionally narrates an event that happens only there.
+  4. Asks every villager, in both villages, what they think of Kabir.
+- **Tests:** `tests/test_templates.py`, 6 cases:
+  - template contents and schema
+  - an exact copy
+  - a theft in world A is invisible in world B and in the template
+  - no overwrite (409)
+  - delete and start again
+  - bad requests
+- **pytest:** 110 pass (+2 opt-in live).
+
+**Live** (template from the live world `m171…`):
+- `template_chandanpur`: 9 characters, 24 trust links, 24 friendships. `world_chandanpur_b` was copied in **6.4 ms**.
+- **Every villager:** in the live village, Kabir's reputation ranges from −0.9 (Gopal, 2 beliefs) to −6.1 (Chotu, 13 beliefs), and the top belief is "Kabir stole a silver hammer". In `chandanpur_b`, every villager has **never heard of him**.
+- **With `--good-deed`** (narrated only in `chandanpur_b`: "Kabir helped Pandit Shastri carry the new temple bell up the hill"):
+  - Pandit Shastri: **+0.7** in the copy vs **−1.6** in the live village.
+  - Same person, same id, opposite reputations.
+- ✅ No belief about Kabir appears in both villages. The template still has 0 events, claims or beliefs.
+
+**❌ → ✅ Tunnel dropped:**
+- The first `--good-deed` run got a 502. The SSH tunnel had died at 10:23 IST, although the Mac stayed awake under `caffeinate`, so the town was also silent until it was reopened.
+- The Ubuntu box answered pings at ~150 ms, which suggests a flaky Wi-Fi link.
+- I had started the tunnel with `start`, not `watch`. It now runs in `watch` mode, which reopens it within 20 s.
+
+---
+
 ## Open questions
 
-- 🔬 **4.6 scope:** a replay village from recorded conversations? A `GRAPH.COPY` template village?
+- ✅ ~~4.6 scope~~ → `GRAPH.COPY` template village (Oct 17). Replay could be added on top.
 - 🔬 **Phase 5 form:** a separate small web page served by the memory service (graph and case board) vs. panels inside AI Town's React UI. Leaning toward a standalone page next to the town, to avoid deep AI Town UI changes.
 - 💡 **Report upstream to FalkorDB (optional):**
   - (a) An OPTIONAL MATCH after `OPTIONAL MATCH … WITH <aggregation>` silently matched nothing (step 2.4).

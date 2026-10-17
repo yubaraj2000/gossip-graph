@@ -15,6 +15,7 @@ Every NPC's memory lives in FalkorDB. An NPC knows something only if there is a 
 ## Principles
 
 1. **One graph per world.** The graph is named `world_<convexWorldId>`. Worlds are fully isolated (separate memory per tenant), and writes to different worlds run in parallel.
+   - **Village templates** (step 4.6): `template_<name>` holds a village's starting state only (characters, gullibility, `KNOWS` trust, `FRIEND` ties) plus the schema and indexes. A new world can start as a copy: `GRAPH.COPY template_chandanpur world_chandanpur_b` (about 6 ms; indexes, including the vector index, are copied). After that the copy is independent: events and gossip in one world never reach another world or the template. Endpoints: `POST /templates/{name}`, `GET /templates`, `POST /worlds/{id}/from-template/{name}` (409 if the world exists), `DELETE /worlds/{id}`.
 2. **The graph is the brain, and the LLM is the mouth.** Recall, provenance, reputation and gossip ranking are deterministic Cypher. The LLM only does two things:
    - extracts claims from finished conversations
    - turns recalled context into dialogue
@@ -243,7 +244,7 @@ There is one call per finished conversation, using `llama3.1:8b` with Ollama's J
 | Persistent conversation history | `Conversation`/`Message`, recalled with Q3 |
 | Shared state and handoffs | Beliefs flowing along `HEARD_FROM`; `Task` (4.4) |
 | High-concurrency reads and writes | Writes to different world graphs run in parallel; idempotent `MERGE` ingest |
-| Separate memory per user/tenant | One graph per world (`world_<id>`), cloned from a template with `GRAPH.COPY` |
+| Separate memory per user/tenant | One graph per world (`world_<id>`); background villages start as a `GRAPH.COPY` of a village template (`template_<name>`) and are checked to stay isolated (`scripts/background_village.py`) |
 
 ## FalkorDB gotchas found while validating
 
