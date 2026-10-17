@@ -1,4 +1,4 @@
-"""FalkorDB access: one graph per world, plus idempotent schema setup."""
+"""FalkorDB access: one graph per world (plus village templates to start worlds from), and idempotent schema setup."""
 import re
 import threading
 from functools import lru_cache
@@ -9,6 +9,7 @@ from redis.exceptions import ResponseError
 from memory.config import settings
 
 WORLD_PREFIX = "world_"
+TEMPLATE_PREFIX = "template_"
 _WORLD_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 # Mirrors the "Indexes" section of docs/DATA_MODEL.md.
@@ -41,16 +42,38 @@ def world_graph(world_id: str) -> Graph:
     return client().select_graph(graph_name(world_id))
 
 
+def template_graph_name(name: str) -> str:
+    if not _WORLD_ID.fullmatch(name):
+        raise ValueError(f"invalid template name: {name!r}")
+    return TEMPLATE_PREFIX + name
+
+
+def template_graph(name: str) -> Graph:
+    return client().select_graph(template_graph_name(name))
+
+
 def list_worlds() -> list[str]:
     return sorted(n.removeprefix(WORLD_PREFIX) for n in client().list_graphs() if n.startswith(WORLD_PREFIX))
 
 
+def list_templates() -> list[str]:
+    return sorted(n.removeprefix(TEMPLATE_PREFIX) for n in client().list_graphs() if n.startswith(TEMPLATE_PREFIX))
+
+
+def exists(graph: str) -> bool:
+    return graph in client().list_graphs()
+
+
 def existing_indexes(world_id: str) -> set[tuple[str, str, str]]:
     """(label, property, kind) for every index in the world's graph."""
+    return _indexes(graph_name(world_id))
+
+
+def _indexes(graph: str) -> set[tuple[str, str, str]]:
     # Querying a graph that was never written to fails with "empty key", so check first.
-    if graph_name(world_id) not in client().list_graphs():
+    if not exists(graph):
         return set()
-    rows = world_graph(world_id).ro_query("CALL db.indexes() YIELD label, types RETURN label, types").result_set
+    rows = client().select_graph(graph).ro_query("CALL db.indexes() YIELD label, types RETURN label, types").result_set
     return {(label, prop, kind) for label, types in rows for prop, kinds in types.items() for kind in kinds}
 
 
@@ -71,10 +94,26 @@ def ensure_world(world_id: str) -> None:
             _ready.add(world_id)
 
 
+def delete_world(world_id: str) -> bool:
+    """Delete a world's graph. True if it existed. The next write to this world id sets its schema up again."""
+    name = graph_name(world_id)
+    with _ready_lock:
+        _ready.discard(world_id)
+        if not exists(name):
+            return False
+        client().select_graph(name).delete()
+        return True
+
+
 def ensure_schema(world_id: str) -> list[str]:
     """Create any missing indexes for a world. Safe to call repeatedly; returns what it created."""
-    g = world_graph(world_id)
-    have = existing_indexes(world_id)
+    return ensure_graph_schema(graph_name(world_id))
+
+
+def ensure_graph_schema(graph: str) -> list[str]:
+    """ensure_schema for any graph name (worlds and templates share one schema)."""
+    g = client().select_graph(graph)
+    have = _indexes(graph)
     created = []
     for label, prop in RANGE_INDEXES:
         if (label, prop, "RANGE") not in have and _create_index(g, f"CREATE INDEX FOR (n:{label}) ON (n.{prop})"):

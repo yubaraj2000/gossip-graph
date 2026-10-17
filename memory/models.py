@@ -19,6 +19,12 @@ class RelationshipIn(BaseModel):
     trust: float = Field(ge=0, le=1)  # how much `source` believes what `target` says
 
 
+class TemplateIn(BaseModel):
+    """A village's starting state: who lives there, their personalities, and who trusts whom."""
+    characters: list[CharacterIn] = Field(min_length=1)
+    relationships: list[RelationshipIn] = []
+
+
 class EventIn(BaseModel):
     """Something that really happened (narrator). Characters may be given by id or by name."""
     kind: str  # one of the claim predicates, e.g. "stole_from"

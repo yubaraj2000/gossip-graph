@@ -10,9 +10,9 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 
-from memory import cases, db, explain, ingest, llm, narrate, recall
+from memory import cases, db, explain, ingest, llm, narrate, recall, templates
 from memory.config import settings
-from memory.models import CaseIn, CharacterIn, ConversationIn, EventIn, RelationshipIn
+from memory.models import CaseIn, CharacterIn, ConversationIn, EventIn, RelationshipIn, TemplateIn
 
 log = logging.getLogger("memory")
 
@@ -73,6 +73,40 @@ def create_world(world_id: str) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"world": world_id, "graph": db.graph_name(world_id), "indexes_created": created}
+
+
+@app.delete("/worlds/{world_id}")
+def delete_world(world_id: str) -> dict:
+    """Delete a world's graph (e.g. to restart a background village from its template)."""
+    _check_world_id(world_id)
+    return {"world": world_id, "deleted": db.delete_world(world_id)}
+
+
+@app.get("/templates")
+def list_templates() -> dict:
+    return {"templates": db.list_templates()}
+
+
+@app.post("/templates/{name}")
+def create_template(name: str, template: TemplateIn) -> dict:
+    """Seed a village template once (replacing an older version); start worlds from it with from-template."""
+    try:
+        return templates.create(name, template.characters, template.relationships)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@app.post("/worlds/{world_id}/from-template/{name}")
+def start_world_from_template(world_id: str, name: str) -> dict:
+    """Start a new, separate world as a copy of a template (GRAPH.COPY)."""
+    try:
+        return templates.start_world(name, world_id)
+    except templates.TemplateNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except templates.WorldExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @app.post("/worlds/{world_id}/characters")
