@@ -1353,6 +1353,30 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - **Security fix (open since Phase 1):** AI Town's compose file published Convex 3210/3211 and the dashboard on **every interface**, plus a host **11434** mapping. Now they're bound to `127.0.0.1`, and the 11434 mapping is removed: nothing listens there, and it would block a local Ollama on its default port, which is the README's suggested setup. After recreating, the backend kept its data (same world id). The dashboard needed a second `up` because compose checked the backend's health too early, so `up.sh` now waits for the backend before starting the dashboard.
 - **README "Run it yourself"** now reads: a one-off configuration block, then `scripts/up.sh`.
 
+**❌ → ✅ Memory page at half-screen width** (found by [me] when setting up the recording, side by side with the town):
+- **Symptoms:** the map was blank, the town lagged, and Chrome's GPU process ran at **97% CPU**.
+- **Cause:** the narrow layout (`max-width: 900px`) gave the map box no definite height (`flex: 1` inside an auto-height grid), so vis-network's canvas and its container kept resizing each other.
+- **Fixes:**
+  - `body` is now a full-height flex column, and narrow screens use grid rows (map on top, tabs and feed below, both always visible).
+  - The resize-triggered refit is debounced.
+  - Each 3 s poll sends vis-network only the nodes and edges that actually changed (a `DataSet.update` redraws even when nothing differs).
+- **Measured at 735 px width:** **0 redraws in 9 s** when nothing changes.
+- Also seen: the Mac was short on memory (15 GB used, 7 GB compressed, Chrome about 3 GB with other tabs open).
+
+**❌ → ✅ Feed skipped beliefs extracted out of order** (found by checking the recording's frames; [me] asked to verify the 1-hour clip):
+- **Symptom:** in the recording, Pandit Shastri's hop appears at 5:24 and Balwant's around 40:00, but **Chotu's hop never appeared** in the live feed.
+- **Cause:**
+  - A belief's `created_at` is when the line was *said*. It enters the graph only after extraction (1–15 minutes later, in queue order), and the page polled for `created_at > newest seen`.
+  - Conversation `c:1810` (ended 20:22:29) was extracted first, and `c:1862` (ended 20:23:36, containing Chotu's 20:22:02 hop) afterwards.
+  - Chotu's older-timed belief was therefore behind the page's cursor, and was skipped.
+- **Fix:**
+  - Beliefs now also get `recorded_at = timestamp()` (FalkorDB, ms) when they are created: `ingest` self and heard beliefs, and narrator witnessed beliefs.
+  - The feed query filters and sorts by `coalesce(recorded_at, created_at)`.
+  - The page passes back the server's `now` (read before the feed query) as its next `since`, so nothing can fall between polls. The displayed time is still when it was said.
+- **Regression test** `test_the_feed_never_skips_a_conversation_extracted_late`: a conversation said a minute later is extracted first, then the earlier one; its belief must still appear. pytest **122 pass**.
+- The video stays usable: the "why" panel reads the graph directly, so Chotu's chain shows there.
+- **Verifying a recording without ffmpeg:** a small Swift `AVAssetImageGenerator` script extracts exact frames (optionally cropped to the feed), and the moment a belief was written is found from its conversation's `taken_at`. Note that macOS recording filenames contain a narrow no-break space before "PM", so use a glob.
+
 ---
 
 ## Open questions
