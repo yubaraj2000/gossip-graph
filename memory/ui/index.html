@@ -687,7 +687,10 @@ function start() {
   for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => showTab(b.dataset.tab);
   document.getElementById('search').oninput = renderBeliefs;
   for (const id of ['show-news', 'show-friends']) document.getElementById(id).onchange = () => { since = null; seenFeed.clear(); poll(); };
-  loadWorlds().then(poll).catch(e => { document.getElementById('live').classList.add('off'); console.error(e); });
+  // Optional deep link, e.g. ?world=…&person=p:8&claim=k_… opens that villager's "why do you think that?" view.
+  loadWorlds().then(poll).then(() => {
+    if (params.get('person')) openPerson(params.get('person'), params.get('claim'));
+  }).catch(e => { document.getElementById('live').classList.add('off'); console.error(e); });
 }
 start();
 </script>

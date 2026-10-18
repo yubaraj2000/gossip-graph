@@ -1382,6 +1382,21 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - The page is now a full-height column: the map fills the space, and the chat panel sits beside it on wide screens or below it on narrow ones (at most 28% of the height). The footer buttons are compact.
 - **Zoom:** the map now opens at a *cover* zoom (it fills the canvas with no empty bands) and can still zoom out to the whole town (`PixiViewport.tsx`). `tsc` is clean; checked in Chrome at half-screen width.
 
+**✅ 6.3 Demo video** ([me] directed the story; [AI] built the recording)
+- **Story change** ([me]): the victim can't be the witness, or there's no mystery. In the final run, **Meera** sees Kabir steal Ramesh's hammer, and Ramesh only finds it gone.
+- **Final run (village `m174…`):**
+  - The rumor spread Meera → Chotu (90%) → Pandit Shastri (36%), and to Ramesh, Balwant and others.
+  - Inspector Vikram interviewed Gopal, then his process was killed (a real crash, when the coding session restarted).
+  - Inspector Anjali resumed from the case file and followed "Meera told me" to the eyewitness.
+  - **Verdict:** theft confirmed, 8 made-up rumors marked, 37 beliefs superseded.
+- **Recording:** a script drove a clean, one-tab Chrome window through AppleScript (with Chrome's "Allow JavaScript from Apple Events"), while `screencapture -v` recorded the screen:
+  - title cards, the town, and FalkorDB Browser queries run on a readable snapshot (`GRAPH.COPY` → `chandanpur`)
+  - the memory page, including a new `&person=&claim=` deep link
+  - the investigator logs, the Case board, and the README
+- **Narration:** a macOS text-to-speech voice ("Aman"), one clip per scene. Each scene stayed on screen until its clip ended, and an AVFoundation script then laid the clips at the logged scene times.
+  - Final file: 4:36, MP4. Published: https://youtu.be/PaLzaujH6Yw
+- **❌ → ✅ Rumor-network query:** it returned rows with nulls (from an `OPTIONAL MATCH`), which the FalkorDB Browser didn't draw. Replaced it with complete who-told-whom paths.
+
 ---
 
 ## Open questions

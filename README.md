@@ -4,7 +4,7 @@
 
 **Graph Hacks (WeMakeDevs × FalkorDB) — Track 2: Agent Memory & Coordination.** Built solo by [@yubaraj2000](https://github.com/yubaraj2000).
 
-🎥 **Demo video:** _link added at submission_
+🎥 **Demo video:** https://youtu.be/PaLzaujH6Yw
 
 ---
 
@@ -228,6 +228,8 @@ Tests: `uv run pytest` (FalkorDB must be running) and `cd world && npm test`.
 ## Built with AI (disclosure)
 
 This project was built with an AI coding assistant (**Claude Code**, Anthropic) as a pair programmer: it wrote most of the code and tests under the participant's direction, step by step, with every step reviewed and every commit made by the participant. Ideas, decisions and experiments, including failures, are logged in **[RESEARCH_LOG.md](RESEARCH_LOG.md)**, each tagged **[me]** (the participant) or **[AI]**. A plain-language walkthrough of how it works is in [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
+
+The demo video was recorded by driving the browser with a script, and its narration is a macOS text-to-speech voice.
 
 At runtime the villagers speak through **Llama 3.2 3B** and claims are extracted by **Llama 3.1 8B**, both via Ollama; embeddings are **mxbai-embed-large**.
 
