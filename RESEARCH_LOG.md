@@ -1377,6 +1377,11 @@ Then `no_open_leads`. **The eyewitness was reached in interview 3, and every com
 - The video stays usable: the "why" panel reads the graph directly, so Chotu's chain shows there.
 - **Verifying a recording without ffmpeg:** a small Swift `AVAssetImageGenerator` script extracts exact frames (optionally cropped to the feed), and the moment a belief was written is found from its conversation's `taken_at`. Note that macOS recording filenames contain a narrow no-break space before "PM", so use a glob.
 
+**✅ Town fills the tab** ([me] asked, for the recording)
+- Removed AI Town's big title, the subtitle, the wooden frame (`game-frame`) and the "Powered by Convex" overlay. The credits remain in the footer logos and the README.
+- The page is now a full-height column: the map fills the space, and the chat panel sits beside it on wide screens or below it on narrow ones (at most 28% of the height). The footer buttons are compact.
+- **Zoom:** the map now opens at a *cover* zoom (it fills the canvas with no empty bands) and can still zoom out to the whole town (`PixiViewport.tsx`). `tsc` is clean; checked in Chrome at half-screen width.
+
 ---
 
 ## Open questions

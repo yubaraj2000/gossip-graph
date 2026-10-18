@@ -30,9 +30,13 @@ export default PixiComponent('Viewport', {
     if (viewportRef) {
       viewportRef.current = viewport;
     }
-    // gossip-graph: upstream's zoom-out limit showed only about half the map's width. Allow zooming out until the
-    // whole town fits (same map, drawn smaller, never stretched), but still open at upstream's zoom.
-    const startScale = (1.04 * props.screenWidth) / (props.worldWidth / 2);
+    // gossip-graph: open with the town covering the whole canvas (no empty bands), and allow zooming out until the
+    // whole town fits (same map, drawn smaller, never stretched). Upstream opened at about half the map's width.
+    const coverScale = Math.max(
+      props.screenWidth / props.worldWidth,
+      props.screenHeight / props.worldHeight,
+    );
+    const startScale = coverScale > 0 ? coverScale : (1.04 * props.screenWidth) / (props.worldWidth / 2);
     const fitScale = Math.min(
       props.screenWidth / props.worldWidth,
       props.screenHeight / props.worldHeight,
